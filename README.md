@@ -28,24 +28,33 @@ The **Email Delivery Extractor** is a Streamlit web application that enables use
 
 ## Technical Setup
 
-### OAuth2 Configuration
+## OAuth2 Setup Steps
 
-#### Step 1: Enable Gmail API
-1. Access the [Google Cloud Console](https://console.cloud.google.com/).
-2. Create a new project and navigate to **APIs & Services → Library**.
-3. Search and enable the **Gmail API**.
+### Step 1: Enable Gmail API in Google Cloud Console
+1. **Go to Google Cloud Console:** [Google Cloud Console](https://console.cloud.google.com/).
+2. **Create a project:**
+   - Navigate to the top-left menu → Project selector → **New Project**.
+3. **Enable the Gmail API:**
+   - Go to **APIs & Services → Library**.
+   - Search for **Gmail API** and enable it for your project.
 
-#### Step 2: Configure OAuth Consent Screen
-1. Navigate to **APIs & Services → OAuth consent screen**.
-2. Set user type to **External** for applications intended for public use.
-3. Provide the application details and required scopes (e.g., `https://www.googleapis.com/auth/gmail.readonly`).
-4. Save and submit the consent screen for verification.
+### Step 2: Set Up OAuth Consent Screen
+1. Go to **APIs & Services → OAuth consent screen**.
+2. Choose **External** if you’re allowing public users.
+3. Fill out basic details like the app name and user support email.
+4. Ensure you add the scope for reading Gmail:
 
-#### Step 3: Generate OAuth2 Credentials
-1. Proceed to **APIs & Services → Credentials**.
-2. Click **Create Credentials** and select **OAuth client ID**.
-3. Select application type as **Web application** and set the authorized redirect URIs.
-4. Download the `client_secret.json` and save it securely in your project directory.
+https://www.googleapis.com/auth/gmail.readonly
+
+5. Save and publish the consent screen.
+
+### Step 3: Create OAuth2 Credentials
+1. Go to **APIs & Services → Credentials → Create Credentials → OAuth client ID**.
+2. Choose **Desktop App** (for local testing).
+3. Download the `client_secret.json` file.
+
+### Step 4: Place `client_secret.json` in Your Project Directory
+- Place it in the same directory as `app.py`.
 
 ---
 
