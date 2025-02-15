@@ -21,10 +21,10 @@ if "page_token" not in st.session_state:
 def authenticate_user():
     creds = None
     token_path = "token.pickle"
-    # Fetch the client secrets from Streamlit secrets (stored in TOML format)
     client_secret_info = st.secrets["google_client_config"]
-    # This dictionary structure is required by Google's OAuth client library
+    # Ensure the correct dictionary structure for the client configuration
     client_config = {"web": client_secret_info}
+
     redirect_uri = client_secret_info["redirect_uris"][0]
 
     if os.path.exists(token_path):
@@ -46,7 +46,6 @@ def authenticate_user():
                 with open(token_path, "wb") as token:
                     pickle.dump(creds, token)
     return build('gmail', 'v1', credentials=creds)
-
 def decode_email_body(payload):
     body = ""
     if 'parts' in payload:
