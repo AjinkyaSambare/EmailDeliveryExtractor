@@ -21,8 +21,10 @@ if "page_token" not in st.session_state:
 def authenticate_user():
     creds = None
     token_path = "token.pickle"
-    # Assuming the client secret file is stored as a secret in TOML format
+    # Fetch the client secrets from Streamlit secrets (stored in TOML format)
     client_secret_info = st.secrets["google_client_config"]
+    # This dictionary structure is required by Google's OAuth client library
+    client_config = {"web": client_secret_info}
     redirect_uri = client_secret_info["redirect_uris"][0]
 
     if os.path.exists(token_path):
@@ -34,7 +36,7 @@ def authenticate_user():
             creds.refresh(Request())
         else:
             flow = InstalledAppFlow.from_client_config(
-                client_secret_info, SCOPES, redirect_uri=redirect_uri)
+                client_config, SCOPES, redirect_uri=redirect_uri)
             auth_url, _ = flow.authorization_url(prompt='consent')
             st.write(f"Please go to this URL and authorize access: {auth_url}")
             code = st.text_input("Enter the authorization code")
