@@ -21,8 +21,9 @@ if "page_token" not in st.session_state:
 def authenticate_user():
     creds = None
     token_path = "token.pickle"
-    client_secret_path = "client_secret.json"
-    redirect_uri = st.secrets["redirect_uri"]
+    # Assuming the client secret file is stored as a secret in TOML format
+    client_secret_info = st.secrets["google_client_config"]
+    redirect_uri = client_secret_info["redirect_uris"][0]
 
     if os.path.exists(token_path):
         with open(token_path, "rb") as token:
@@ -32,8 +33,8 @@ def authenticate_user():
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
         else:
-            flow = InstalledAppFlow.from_client_secrets_file(
-                client_secret_path, SCOPES, redirect_uri=redirect_uri)
+            flow = InstalledAppFlow.from_client_config(
+                client_secret_info, SCOPES, redirect_uri=redirect_uri)
             auth_url, _ = flow.authorization_url(prompt='consent')
             st.write(f"Please go to this URL and authorize access: {auth_url}")
             code = st.text_input("Enter the authorization code")
