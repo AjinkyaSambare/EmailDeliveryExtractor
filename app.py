@@ -18,7 +18,6 @@ if "logged_in_email" not in st.session_state:
 if "page_token" not in st.session_state:
     st.session_state.page_token = None
 
-
 def authenticate_user():
     """Authenticate user using Google OAuth and store credentials securely."""
     creds = None
@@ -34,7 +33,17 @@ def authenticate_user():
             creds.refresh(Request())
         else:
             # Load client secrets from Streamlit secrets manager
-            client_secret_json = json.loads(st.secrets["google_api"]["client_secret"])
+            client_secret_json = json.loads(json.dumps({
+                "web": {
+                    "client_id": st.secrets["google_client_config"]["client_id"],
+                    "project_id": st.secrets["google_client_config"]["project_id"],
+                    "auth_uri": st.secrets["google_client_config"]["auth_uri"],
+                    "token_uri": st.secrets["google_client_config"]["token_uri"],
+                    "auth_provider_x509_cert_url": st.secrets["google_client_config"]["auth_provider_x509_cert_url"],
+                    "client_secret": st.secrets["google_client_config"]["client_secret"],
+                    "redirect_uris": st.secrets["google_client_config"]["redirect_uris"]
+                }
+            }))
             flow = InstalledAppFlow.from_client_config(client_secret_json, SCOPES)
             creds = flow.run_console()
 
@@ -43,7 +52,6 @@ def authenticate_user():
             pickle.dump(creds, token)
 
     return build('gmail', 'v1', credentials=creds)
-
 
 def decode_email_body(payload):
     """Decode the email body and extract inline images."""
@@ -70,7 +78,6 @@ def decode_email_body(payload):
 
     return body.strip(), images
 
-
 def fetch_emails(service, max_results=10, page_token=None):
     """Fetch emails from Gmail API."""
     if page_token:
@@ -95,7 +102,6 @@ def fetch_emails(service, max_results=10, page_token=None):
 
     return email_list, next_page_token
 
-
 # User Authentication
 if not st.session_state.logged_in_email:
     if st.button("Sign in with Google"):
@@ -110,7 +116,6 @@ else:
             os.remove("token.pickle")
         st.session_state.logged_in_email = None
         st.session_state.page_token = None  # Reset pagination
-
 
 # Display Emails
 if st.session_state.logged_in_email:
