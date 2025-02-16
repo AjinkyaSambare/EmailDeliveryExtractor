@@ -8,7 +8,7 @@ from google_auth_oauthlib.flow import Flow
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 
-# Configure page settings
+# Configure page settings - must be the first Streamlit command
 st.set_page_config(page_title="Email Extractor", page_icon="📧", layout="wide")
 
 # Google API Scope
@@ -23,8 +23,6 @@ if "logged_in_email" not in st.session_state:
     st.session_state.logged_in_email = None
 if "page_token" not in st.session_state:
     st.session_state.page_token = None
-if "auth_state" not in st.session_state:
-    st.session_state.auth_state = None  # To track OAuth state parameter
 
 def decode_email_body(payload):
     """Decode the email body and extract inline images."""
@@ -36,7 +34,7 @@ def decode_email_body(payload):
                 content_type = part['mimeType']
                 if content_type == 'text/html':
                     body = base64.urlsafe_b64decode(part['body']['data']).decode("utf-8")
-                elif content_type.startswith('image/'):
+                elif content_type.startswith('image/') and 'filename' in part:
                     image_data = base64.urlsafe_b64decode(part['body']['data'])
                     content_id = part.get('headers', [{'value': 'unknown'}])[0]['value'].strip('<>')
                     images[content_id] = image_data
@@ -70,19 +68,21 @@ def fetch_emails(service, max_results=10, page_token=None):
 
 def authenticate_user():
     """Authenticate user using Google OAuth and store credentials securely."""
-    creds = st.session_state.credentials
+    creds = st.session_state.get('credentials')
     if creds and creds.valid:
         return build('gmail', 'v1', credentials=creds)
     
     query_params = st.experimental_get_query_params()
     if "code" in query_params and "state" in query_params and query_params["state"][0] == st.session_state.auth_state:
         try:
-            client_config = st.secrets["google_client_config"]
-            flow = Flow.from_client_config(client_config, SCOPES, redirect_uri=client_config["redirect_uris"][0])
+            client_config = {
+                "web": st.secrets["google_client_config"]
+            }
+            flow = Flow.from_client_config(client_config, SCOPES, redirect_uri=client_config["web"]["redirect_uris"][0])
             flow.fetch_token(code=query_params["code"][0])
             creds = flow.credentials
             st.session_state.credentials = creds
-            st.session_state.logged_in_email = flow.credentials.id_token['email']
+            st.session_state.logged_in_email = creds.id_token['email']
             st.session_state.page = "emails"
             return build('gmail', 'v1', credentials=creds)
         except Exception as e:
@@ -90,11 +90,13 @@ def authenticate_user():
             return None
     elif "error" in query_params:
         st.error("Access denied or session expired")
-        st.session_state.page = "login"
         return None
     else:
         state = str(uuid.uuid4())
-        flow = Flow.from_client_config(st.secrets["google_client_config"], SCOPES, redirect_uri=st.secrets["google_client_config"]["redirect_uris"][0])
+        client_config = {
+            "web": st.secrets["google_client_config"]
+        }
+        flow = Flow.from_client_config(client_config, SCOPES, redirect_uri=client_config["web"]["redirect_uris"][0])
         auth_url, _ = flow.authorization_url(prompt="consent", state=state, access_type="offline")
         st.session_state.auth_state = state
         st.markdown(f'<a href="{auth_url}" target="_self">Authenticate with Google</a>', unsafe_allow_html=True)
@@ -104,6 +106,8 @@ def show_emails_page():
     """Display the emails page with Gmail content."""
     service = authenticate_user()
     if service:
+        user_profile = service.users().getProfile(userId='me').execute()
+        st.success(f"Logged in as: {user_profile['emailAddress']}")
         emails, next_page_token = fetch_emails(service, page_token=st.session_state.page_token)
         for email in emails:
             with st.expander(f"📧 {email['subject']} - {email['from']}"):
@@ -123,6 +127,7 @@ def show_login_page():
     st.markdown("Connect to your Gmail account to extract and view your emails.")
     authenticate_user()
 
+# Main page router
 if st.session_state.page == "login":
     show_login_page()
 elif st.session_state.page == "emails":
