@@ -67,23 +67,16 @@ def authenticate_user():
                 redirect_uri=redirect_uri
             )
             
-            # Generate authorization URL
-            auth_url, _ = flow.authorization_url(prompt='consent')
+            # Generate authorization URL with offline access
+            auth_url, _ = flow.authorization_url(
+                access_type='offline',
+                include_granted_scopes='true'
+            )
             
-            # Display the auth URL to the user
-            st.markdown(f"Please click this link to authorize the application: [Authorize]({auth_url})")
-            
-            # Get the authorization code from the user
-            auth_code = st.text_input("Enter the authorization code:")
-            
-            if auth_code:
-                try:
-                    flow.fetch_token(code=auth_code)
-                    creds = flow.credentials
-                    st.session_state.credentials = creds
-                except Exception as e:
-                    st.error(f"Error during authentication: {str(e)}")
-                    return None
+            # Display the auth URL to the user with clear instructions
+            st.info("Click the button below to authenticate with your Google account")
+            st.markdown(f"<a href='{auth_url}' target='_blank'><button style='padding: 8px 16px; background-color: #FF4B4B; color: white; border: none; border-radius: 4px; cursor: pointer;'>Sign in with Google</button></a>", unsafe_allow_html=True)
+            return None  # Return None to handle the callback in the main flow
 
     return build('gmail', 'v1', credentials=creds)
 
