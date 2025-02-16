@@ -115,10 +115,15 @@ def authenticate_user():
                         }
                     }
                     
+                    # Get the current URL
+                    current_url = st.experimental_get_query_params().get("origin", ["https://emaildelivery.streamlit.app"])[0]
+                    if current_url.endswith("/"):
+                        current_url = current_url[:-1]
+                        
                     flow = Flow.from_client_config(
                         client_config,
                         scopes=SCOPES,
-                        redirect_uri=config["redirect_uris"][0]
+                        redirect_uri=current_url
                     )
                     
                     flow.fetch_token(code=query_params["code"][0])
@@ -153,7 +158,10 @@ def authenticate_user():
                     auth_url, _ = flow.authorization_url(
                         access_type='offline',
                         include_granted_scopes='true',
-                        prompt='consent'
+                        prompt='consent',
+                        state=str(uuid.uuid4()),
+                        login_hint=st.session_state.get("email", ""),
+                        response_type='code'
                     )
                     
                     st.info("Click the button below to authenticate with your Google account")
