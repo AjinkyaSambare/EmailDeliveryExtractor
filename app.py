@@ -34,7 +34,8 @@ def authenticate_user():
             flow = InstalledAppFlow.from_client_config({
                 "web": st.secrets["google_client_config"]
             }, SCOPES)
-            # Change to run_console for deployment environment
+            # Using run_console instead of run_local_server for cloud environments
+            print("Please visit this URL to authorize this application: ", flow.authorization_url())
             creds = flow.run_console()
 
         # Save the credentials for future sessions
@@ -42,42 +43,6 @@ def authenticate_user():
             pickle.dump(creds, token)
 
     return build('gmail', 'v1', credentials=creds)
-def decode_email_body(payload):
-    """Decode the email body and extract inline images."""
-    body = ""
-    images = {}
-
-    if 'parts' in payload:
-        for part in payload['parts']:
-            content_type = part['mimeType']
-            if content_type == 'text/html':
-                body = base64.urlsafe_b64decode(part['body']['data']).decode("utf-8")
-            elif content_type.startswith('image/') and 'filename' in part:
-                image_data = base64.urlsafe_b64decode(part['body']['data'])
-                content_id = part['headers'][0]['value'].strip('<>')
-                images[content_id] = image_data
-
-    else:
-        body = base64.urlsafe_b64decode(payload['body']['data']).decode("utf-8") if 'data' in payload['body'] else "No message content."
-
-    return body.strip(), images
-
-def fetch_emails(service, max_results=10, page_token=None):
-    """Fetch emails from Gmail API."""
-    results = service.users().messages().list(userId='me', maxResults=max_results, pageToken=page_token).execute()
-    messages = results.get('messages', [])
-    next_page_token = results.get('nextPageToken')
-    email_list = []
-
-    for msg in messages:
-        msg_data = service.users().messages().get(userId='me', id=msg['id']).execute()
-        headers = msg_data['payload']['headers']
-        subject = next((header['value'] for header in headers if header['name'] == 'Subject'), "No Subject")
-        sender = next((header['value'] for header in headers if header['name'] == 'From'), "Unknown Sender")
-        body, images = decode_email_body(msg_data['payload'])
-        email_list.append({"subject": subject, "from": sender, "body": body, "images": images})
-
-    return email_list, next_page_token
 
 # User Authentication
 if not st.session_state.logged_in_email:
