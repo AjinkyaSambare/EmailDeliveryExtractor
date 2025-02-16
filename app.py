@@ -6,8 +6,13 @@ from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 import base64
 from urllib.parse import parse_qs, urlparse
+import logging
 
-# Configure OAuth settings to prevent the "Invalid redirect" error
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Configure OAuth settings
 os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
 
 # Google API Scope
@@ -21,58 +26,115 @@ st.set_page_config(
 
 st.title("📧 Email - Extractor")
 
-# Global session state variables
-if "logged_in_email" not in st.session_state:
-    st.session_state.logged_in_email = None
-if "page_token" not in st.session_state:
-    st.session_state.page_token = None
-if "oauth_state" not in st.session_state:
-    st.session_state.oauth_state = None
-if "authentication_attempted" not in st.session_state:
-    st.session_state.authentication_attempted = False
+# Initialize session state
+def init_session_state():
+    if "logged_in_email" not in st.session_state:
+        st.session_state.logged_in_email = None
+    if "page_token" not in st.session_state:
+        st.session_state.page_token = None
+    if "oauth_state" not in st.session_state:
+        st.session_state.oauth_state = None
+    if "authentication_attempted" not in st.session_state:
+        st.session_state.authentication_attempted = False
+
+init_session_state()
 
 def clear_auth_state():
     """Clear all authentication related state and files."""
-    if os.path.exists("token.pickle"):
-        os.remove("token.pickle")
+    try:
+        if os.path.exists("token.pickle"):
+            os.remove("token.pickle")
+    except Exception as e:
+        logger.error(f"Error removing token file: {e}")
+    
     st.session_state.logged_in_email = None
     st.session_state.page_token = None
     st.session_state.oauth_state = None
     st.session_state.authentication_attempted = False
+    
+    # Clear URL parameters
+    st.query_params.clear()
+
+def create_oauth_flow():
+    """Create and configure OAuth flow."""
+    try:
+        client_config = st.secrets["google_client_config"]
+        redirect_uri = client_config["redirect_uris"][0]
+        
+        flow = Flow.from_client_config(
+            {"web": client_config},
+            scopes=SCOPES,
+            redirect_uri=redirect_uri
+        )
+        
+        auth_url, state = flow.authorization_url(
+            access_type='offline',
+            include_granted_scopes='true',
+            prompt='consent'  # Force consent screen to get new refresh token
+        )
+        
+        st.session_state.oauth_state = state
+        return flow, auth_url
+    except Exception as e:
+        logger.error(f"Error creating OAuth flow: {e}")
+        st.error("Failed to initialize authentication. Please try again.")
+        return None, None
+
+def handle_oauth_callback(flow):
+    """Handle OAuth callback and token exchange."""
+    try:
+        code = st.query_params.get("code")
+        state = st.query_params.get("state")
+        
+        if code and state:
+            flow.fetch_token(code=code)
+            creds = flow.credentials
+            
+            # Save the credentials
+            with open("token.pickle", "wb") as token:
+                pickle.dump(creds, token)
+            
+            st.query_params.clear()
+            return creds
+    except Exception as e:
+        logger.error(f"OAuth callback error: {e}")
+        clear_auth_state()
+        st.error("Authentication failed. Please try again.")
+    return None
 
 def decode_email_body(payload):
     """Decode the email body and extract inline images."""
     body = ""
     images = {}
 
-    if 'parts' in payload:
-        for part in payload['parts']:
-            if 'mimeType' not in part:
-                continue
+    try:
+        if 'parts' in payload:
+            for part in payload['parts']:
+                if 'mimeType' not in part:
+                    continue
+                    
+                content_type = part['mimeType']
                 
-            content_type = part['mimeType']
-            
-            if content_type == 'text/html' and 'data' in part.get('body', {}):
-                body = base64.urlsafe_b64decode(part['body']['data']).decode("utf-8")
-            elif content_type.startswith('image/'):
-                if 'filename' in part and 'data' in part.get('body', {}):
-                    try:
-                        image_data = base64.urlsafe_b64decode(part['body']['data'])
-                        content_id = next((header['value'].strip('<>') 
-                                        for header in part.get('headers', []) 
-                                        if header['name'].lower() == 'content-id'), 
-                                       part['filename'])
-                        images[content_id] = image_data
-                    except Exception as e:
-                        st.warning(f"Failed to decode image: {str(e)}")
+                if content_type == 'text/html' and 'data' in part.get('body', {}):
+                    body = base64.urlsafe_b64decode(part['body']['data']).decode("utf-8")
+                elif content_type.startswith('image/'):
+                    if 'filename' in part and 'data' in part.get('body', {}):
+                        try:
+                            image_data = base64.urlsafe_b64decode(part['body']['data'])
+                            content_id = next((header['value'].strip('<>') 
+                                            for header in part.get('headers', []) 
+                                            if header['name'].lower() == 'content-id'), 
+                                           part['filename'])
+                            images[content_id] = image_data
+                        except Exception as e:
+                            logger.warning(f"Failed to decode image: {e}")
 
-    else:
-        if 'body' in payload and 'data' in payload['body']:
-            try:
+        else:
+            if 'body' in payload and 'data' in payload['body']:
                 body = base64.urlsafe_b64decode(payload['body']['data']).decode("utf-8")
-            except Exception as e:
-                st.warning(f"Failed to decode email body: {str(e)}")
-                body = "Error decoding message content."
+    except Exception as e:
+        logger.error(f"Error decoding email body: {e}")
+        body = "Error decoding message content."
 
     return body.strip(), images
 
@@ -111,142 +173,101 @@ def fetch_emails(service, max_results=10, page_token=None):
                     "images": images
                 })
             except Exception as e:
-                st.warning(f"Failed to fetch email details: {str(e)}")
+                logger.warning(f"Failed to fetch email details: {e}")
                 continue
 
         return email_list, next_page_token
     except Exception as e:
-        st.error(f"Failed to fetch emails: {str(e)}")
+        logger.error(f"Failed to fetch emails: {e}")
         return [], None
 
 def authenticate_user():
-    """Authenticate user using Google OAuth and store credentials securely."""
+    """Main authentication function."""
     if not st.session_state.authentication_attempted:
         return None
 
     creds = None
 
-    # Load stored credentials if available
+    # Try to load existing credentials
     if os.path.exists("token.pickle"):
         try:
             with open("token.pickle", "rb") as token:
                 creds = pickle.load(token)
         except Exception as e:
-            st.warning("Failed to load stored credentials. Starting fresh authentication.")
+            logger.error(f"Error loading credentials: {e}")
             clear_auth_state()
             return None
 
-    # If credentials are invalid or expired, refresh or request new ones
-    if not creds or not creds.valid:
+    # Handle credential refresh or new authentication
+    try:
+        if creds and creds.valid:
+            return build('gmail', 'v1', credentials=creds)
+        
         if creds and creds.expired and creds.refresh_token:
             try:
                 creds.refresh(Request())
+                with open("token.pickle", "wb") as token:
+                    pickle.dump(creds, token)
+                return build('gmail', 'v1', credentials=creds)
             except Exception as e:
-                st.warning("Failed to refresh credentials. Please authenticate again.")
+                logger.error(f"Error refreshing token: {e}")
                 clear_auth_state()
+                st.error("Session expired. Please sign in again.")
                 return None
+        
+        # Start new authentication flow
+        flow, auth_url = create_oauth_flow()
+        if not flow or not auth_url:
+            return None
+            
+        # Check for OAuth callback
+        if "code" in st.query_params:
+            creds = handle_oauth_callback(flow)
+            if creds:
+                return build('gmail', 'v1', credentials=creds)
         else:
-            # Get the redirect URI from the client config
-            client_config = st.secrets["google_client_config"]
-            redirect_uri = client_config["redirect_uris"][0]
-
-            # Check if we have a code in the URL query parameters
-            query_params = st.query_params
-            code = query_params.get("code")
-            state = query_params.get("state")
-
-            if code and state:
-                try:
-                    # Recreate the flow with the stored state
-                    flow = Flow.from_client_config(
-                        {
-                            "web": client_config
-                        },
-                        scopes=SCOPES,
-                        redirect_uri=redirect_uri,
-                        state=state
-                    )
-                    
-                    # Exchange the authorization code for credentials
-                    flow.fetch_token(code=code)
-                    creds = flow.credentials
-                    
-                    # Save the credentials for future sessions
-                    with open("token.pickle", "wb") as token:
-                        pickle.dump(creds, token)
-                    
-                    # Clear the URL parameters
-                    st.query_params.clear()
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Authentication failed: {str(e)}")
-                    clear_auth_state()
-                    return None
-            else:
-                try:
-                    # Create the flow using the client secrets
-                    flow = Flow.from_client_config(
-                        {
-                            "web": client_config
-                        },
-                        scopes=SCOPES,
-                        redirect_uri=redirect_uri
-                    )
-
-                    # Generate the authorization URL
-                    auth_url, state = flow.authorization_url(
-                        access_type='offline',
-                        include_granted_scopes='true'
-                    )
-
-                    # Store the state in session state
-                    st.session_state.oauth_state = state
-
-                    # Create the authorization URL button
-                    st.markdown(f'''
-                        <a href="{auth_url}" target="_self">
-                            <button style="background-color: #4CAF50; color: white; padding: 12px 20px; 
-                            border: none; border-radius: 4px; cursor: pointer;">
-                                Sign in with Google
-                            </button>
-                        </a>
-                    ''', unsafe_allow_html=True)
-                    return None
-                except Exception as e:
-                    st.error(f"Failed to create authentication flow: {str(e)}")
-                    clear_auth_state()
-                    return None
-
-    try:
-        return build('gmail', 'v1', credentials=creds) if creds else None
+            # Show sign-in button
+            st.markdown(f'''
+                <a href="{auth_url}" target="_self">
+                    <button style="background-color: #4CAF50; color: white; padding: 12px 20px; 
+                    border: none; border-radius: 4px; cursor: pointer;">
+                        Sign in with Google
+                    </button>
+                </a>
+            ''', unsafe_allow_html=True)
+            
     except Exception as e:
-        st.error(f"Failed to build Gmail service: {str(e)}")
+        logger.error(f"Authentication error: {e}")
         clear_auth_state()
-        return None
+        st.error("An error occurred during authentication. Please try again.")
+    
+    return None
 
 # Initial authentication button
 if not st.session_state.authentication_attempted:
+    st.write("Welcome to Email Extractor! Click below to sign in with your Google account.")
     if st.button("Sign in with Google", type="primary"):
         st.session_state.authentication_attempted = True
         st.rerun()
 
-# Only proceed with authentication if attempted
+# Main authentication flow
 if st.session_state.authentication_attempted:
     service = authenticate_user()
+    
     if service and not st.session_state.logged_in_email:
         try:
             user_profile = service.users().getProfile(userId='me').execute()
             st.session_state.logged_in_email = user_profile['emailAddress']
-            st.session_state.page_token = None
             st.rerun()
         except Exception as e:
-            st.error(f"Failed to get user profile: {str(e)}")
+            logger.error(f"Error getting user profile: {e}")
             clear_auth_state()
+            st.error("Failed to get user profile. Please try signing in again.")
 
+    # Display user interface when logged in
     if st.session_state.logged_in_email:
         st.success(f"Logged in as: {st.session_state.logged_in_email}")
         
-        # Add a button to download emails
         col1, col2 = st.columns([1, 10])
         with col1:
             if st.button("🚪 Log out"):
@@ -301,5 +322,6 @@ if st.session_state.authentication_attempted:
                             st.rerun()
 
             except Exception as e:
-                st.error(f"An error occurred while fetching emails: {str(e)}")
+                logger.error(f"Error fetching emails: {e}")
+                st.error("Failed to fetch emails. Please try logging in again.")
                 clear_auth_state()
