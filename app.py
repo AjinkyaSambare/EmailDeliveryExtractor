@@ -151,9 +151,9 @@ def authenticate_user():
             redirect_uri = client_config["redirect_uris"][0]
 
             # Check if we have a code in the URL query parameters
-            query_params = st.experimental_get_query_params()
-            code = query_params.get("code", [None])[0]
-            state = query_params.get("state", [None])[0]
+            query_params = st.query_params
+            code = query_params.get("code")
+            state = query_params.get("state")
 
             if code and state:
                 try:
@@ -176,8 +176,8 @@ def authenticate_user():
                         pickle.dump(creds, token)
                     
                     # Clear the URL parameters
-                    st.experimental_set_query_params()
-                    st.experimental_rerun()
+                    st.query_params.clear()
+                    st.rerun()
                 except Exception as e:
                     st.error(f"Authentication failed: {str(e)}")
                     clear_auth_state()
@@ -228,7 +228,7 @@ def authenticate_user():
 if not st.session_state.authentication_attempted:
     if st.button("Sign in with Google", type="primary"):
         st.session_state.authentication_attempted = True
-        st.experimental_rerun()
+        st.rerun()
 
 # Only proceed with authentication if attempted
 if st.session_state.authentication_attempted:
@@ -238,7 +238,7 @@ if st.session_state.authentication_attempted:
             user_profile = service.users().getProfile(userId='me').execute()
             st.session_state.logged_in_email = user_profile['emailAddress']
             st.session_state.page_token = None
-            st.experimental_rerun()
+            st.rerun()
         except Exception as e:
             st.error(f"Failed to get user profile: {str(e)}")
             clear_auth_state()
@@ -251,7 +251,7 @@ if st.session_state.authentication_attempted:
         with col1:
             if st.button("🚪 Log out"):
                 clear_auth_state()
-                st.experimental_rerun()
+                st.rerun()
 
         # Display Emails
         service = authenticate_user()
@@ -293,12 +293,12 @@ if st.session_state.authentication_attempted:
                 with col1:
                     if st.button("⬅️ Previous Page") and st.session_state.page_token is not None:
                         st.session_state.page_token = None
-                        st.experimental_rerun()
+                        st.rerun()
                 with col2:
                     if next_page_token:
                         if st.button("➡️ Next Page"):
                             st.session_state.page_token = next_page_token
-                            st.experimental_rerun()
+                            st.rerun()
 
             except Exception as e:
                 st.error(f"An error occurred while fetching emails: {str(e)}")
