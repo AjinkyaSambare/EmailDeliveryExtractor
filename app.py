@@ -32,16 +32,29 @@ def authenticate_user():
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
         else:
-            # Load client secrets from Streamlit secrets
+            # Check if required secrets are configured
+            if "google_client_config" not in st.secrets:
+                st.error("Google client configuration is missing. Please configure the secrets.")
+                st.stop()
+
+            config = st.secrets["google_client_config"]
+            required_keys = ["client_id", "client_secret", "redirect_uris"]
+            missing_keys = [key for key in required_keys if key not in config]
+            
+            if missing_keys:
+                st.error(f"Missing required configuration: {', '.join(missing_keys)}")
+                st.stop()
+
+            # Load client secrets from Streamlit secrets exactly as provided
             client_config = {
                 "web": {
-                    "client_id": st.secrets["google_client_config"]["client_id"],
-                    "project_id": st.secrets["google_client_config"]["project_id"],
-                    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-                    "token_uri": "https://oauth2.googleapis.com/token",
-                    "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-                    "client_secret": st.secrets["google_client_config"]["client_secret"],
-                    "redirect_uris": [st.secrets["google_client_config"]["redirect_uri"]]
+                    "client_id": config["client_id"],
+                    "project_id": config["project_id"],
+                    "auth_uri": config["auth_uri"],
+                    "token_uri": config["token_uri"],
+                    "auth_provider_x509_cert_url": config["auth_provider_x509_cert_url"],
+                    "client_secret": config["client_secret"],
+                    "redirect_uris": config["redirect_uris"]
                 }
             }
             
