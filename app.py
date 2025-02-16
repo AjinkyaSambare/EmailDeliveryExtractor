@@ -10,10 +10,10 @@ from googleapiclient.discovery import build
 # Google API Scope
 SCOPES = ['https://www.googleapis.com/auth/gmail.readonly']
 
-st.title("📧 Email - Extractor")
-
-# Configure page settings
+# Configure page settings - must be the first Streamlit command
 st.set_page_config(page_title="Email Extractor", page_icon="📧", layout="wide")
+
+st.title("📧 Email - Extractor")
 
 # Global session state variables
 if "logged_in_email" not in st.session_state:
