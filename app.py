@@ -34,6 +34,10 @@ def authenticate_user():
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
         else:
+            # Get the redirect URI from the client config
+            client_config = st.secrets["google_client_config"]
+            redirect_uri = client_config["redirect_uris"][0]
+
             # Check if we have a code in the URL query parameters
             query_params = st.experimental_get_query_params()
             code = query_params.get("code", [None])[0]
@@ -43,9 +47,11 @@ def authenticate_user():
                 try:
                     # Recreate the flow with the stored state
                     flow = Flow.from_client_config(
-                        st.secrets["google_client_config"],
+                        {
+                            "web": client_config
+                        },
                         scopes=SCOPES,
-                        redirect_uri=st.secrets["redirect_uri"],
+                        redirect_uri=redirect_uri,
                         state=state
                     )
                     
@@ -66,9 +72,11 @@ def authenticate_user():
             else:
                 # Create the flow using the client secrets
                 flow = Flow.from_client_config(
-                    st.secrets["google_client_config"],
+                    {
+                        "web": client_config
+                    },
                     scopes=SCOPES,
-                    redirect_uri=st.secrets["redirect_uri"]
+                    redirect_uri=redirect_uri
                 )
 
                 # Generate the authorization URL
