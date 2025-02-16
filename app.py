@@ -24,16 +24,13 @@ st.set_page_config(
     layout="wide"
 )
 
-st.title("📧 Email - Extractor")
-
 # Initialize session state
 def init_session_state():
+    """Initialize all session state variables."""
     if "logged_in_email" not in st.session_state:
         st.session_state.logged_in_email = None
     if "page_token" not in st.session_state:
         st.session_state.page_token = None
-    if "oauth_state" not in st.session_state:
-        st.session_state.oauth_state = None
     if "authentication_attempted" not in st.session_state:
         st.session_state.authentication_attempted = False
 
@@ -49,11 +46,7 @@ def clear_auth_state():
     
     st.session_state.logged_in_email = None
     st.session_state.page_token = None
-    st.session_state.oauth_state = None
     st.session_state.authentication_attempted = False
-    
-    # Clear URL parameters
-    st.query_params.clear()
 
 def create_oauth_flow():
     """Create and configure OAuth flow."""
@@ -70,11 +63,11 @@ def create_oauth_flow():
         auth_url, state = flow.authorization_url(
             access_type='offline',
             include_granted_scopes='true',
-            prompt='consent'  # Force consent screen to get new refresh token
+            prompt='select_account'  # Force account selection
         )
         
-        st.session_state.oauth_state = state
         return flow, auth_url
+
     except Exception as e:
         logger.error(f"Error creating OAuth flow: {e}")
         st.error("Failed to initialize authentication. Please try again.")
@@ -84,9 +77,8 @@ def handle_oauth_callback(flow):
     """Handle OAuth callback and token exchange."""
     try:
         code = st.query_params.get("code")
-        state = st.query_params.get("state")
         
-        if code and state:
+        if code:
             flow.fetch_token(code=code)
             creds = flow.credentials
             
@@ -96,10 +88,10 @@ def handle_oauth_callback(flow):
             
             st.query_params.clear()
             return creds
+
     except Exception as e:
         logger.error(f"OAuth callback error: {e}")
         clear_auth_state()
-        st.error("Authentication failed. Please try again.")
     return None
 
 def decode_email_body(payload):
@@ -132,11 +124,12 @@ def decode_email_body(payload):
         else:
             if 'body' in payload and 'data' in payload['body']:
                 body = base64.urlsafe_b64decode(payload['body']['data']).decode("utf-8")
+
     except Exception as e:
         logger.error(f"Error decoding email body: {e}")
         body = "Error decoding message content."
 
-    return body.strip(), images
+    return body.strip() or "No content available", images
 
 def fetch_emails(service, max_results=10, page_token=None):
     """Fetch emails from Gmail API."""
@@ -212,7 +205,6 @@ def authenticate_user():
             except Exception as e:
                 logger.error(f"Error refreshing token: {e}")
                 clear_auth_state()
-                st.error("Session expired. Please sign in again.")
                 return None
         
         # Start new authentication flow
@@ -226,12 +218,11 @@ def authenticate_user():
             if creds:
                 return build('gmail', 'v1', credentials=creds)
         else:
-            # Show sign-in button
             st.markdown(f'''
                 <a href="{auth_url}" target="_self">
                     <button style="background-color: #4CAF50; color: white; padding: 12px 20px; 
-                    border: none; border-radius: 4px; cursor: pointer;">
-                        Sign in with Google
+                    border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">
+                        Continue with Google
                     </button>
                 </a>
             ''', unsafe_allow_html=True)
@@ -239,13 +230,17 @@ def authenticate_user():
     except Exception as e:
         logger.error(f"Authentication error: {e}")
         clear_auth_state()
-        st.error("An error occurred during authentication. Please try again.")
     
     return None
 
+# App Header
+st.title("📧 Email - Extractor")
+st.markdown("---")
+
 # Initial authentication button
 if not st.session_state.authentication_attempted:
-    st.write("Welcome to Email Extractor! Click below to sign in with your Google account.")
+    st.write("### Welcome to Email Extractor!")
+    st.write("Connect your Google account to start viewing your emails.")
     if st.button("Sign in with Google", type="primary"):
         st.session_state.authentication_attempted = True
         st.rerun()
@@ -262,11 +257,10 @@ if st.session_state.authentication_attempted:
         except Exception as e:
             logger.error(f"Error getting user profile: {e}")
             clear_auth_state()
-            st.error("Failed to get user profile. Please try signing in again.")
 
     # Display user interface when logged in
     if st.session_state.logged_in_email:
-        st.success(f"Logged in as: {st.session_state.logged_in_email}")
+        st.success(f"Connected as: {st.session_state.logged_in_email}")
         
         col1, col2 = st.columns([1, 10])
         with col1:
@@ -323,5 +317,5 @@ if st.session_state.authentication_attempted:
 
             except Exception as e:
                 logger.error(f"Error fetching emails: {e}")
-                st.error("Failed to fetch emails. Please try logging in again.")
                 clear_auth_state()
+                st.error("Failed to fetch emails. Please try logging in again.")
