@@ -7,11 +7,11 @@ from google_auth_oauthlib.flow import Flow
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 
-# Google API Scope
-SCOPES = ['https://www.googleapis.com/auth/gmail.readonly']
-
 # Configure page settings - must be the first Streamlit command
 st.set_page_config(page_title="Email Extractor", page_icon="📧", layout="wide")
+
+# Google API Scope
+SCOPES = ['https://www.googleapis.com/auth/gmail.readonly']
 
 st.title("📧 Email - Extractor")
 
@@ -45,6 +45,9 @@ def authenticate_user():
                 st.error(f"Missing required configuration: {', '.join(missing_keys)}")
                 st.stop()
 
+            # Get the first redirect URI from the array
+            redirect_uri = config["redirect_uris"][0]
+
             # Load client secrets from Streamlit secrets exactly as provided
             client_config = {
                 "web": {
@@ -61,7 +64,7 @@ def authenticate_user():
             flow = Flow.from_client_config(
                 client_config,
                 scopes=SCOPES,
-                redirect_uri=st.secrets["google_client_config"]["redirect_uri"]
+                redirect_uri=redirect_uri
             )
             
             # Generate authorization URL
