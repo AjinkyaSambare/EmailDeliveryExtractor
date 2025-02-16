@@ -70,26 +70,38 @@ def authenticate_user():
             # Check for OAuth state and code in URL parameters
             query_params = st.experimental_get_query_params()
             
-            if "code" in query_params:
-                try:
-                    flow.fetch_token(code=query_params["code"][0])
-                    creds = flow.credentials
-                    st.session_state.credentials = creds
-                    return build('gmail', 'v1', credentials=creds)
-                except Exception as e:
-                    st.error(f"Error completing authentication: {str(e)}")
+            if "code" in query_params and "state" in query_params:
+                received_state = query_params["state"][0]
+                stored_state = st.session_state.get("oauth_state")
+                
+                if stored_state and received_state == stored_state:
+                    try:
+                        flow.fetch_token(code=query_params["code"][0])
+                        creds = flow.credentials
+                        st.session_state.credentials = creds
+                        # Clear the state after successful authentication
+                        del st.session_state.oauth_state
+                        return build('gmail', 'v1', credentials=creds)
+                    except Exception as e:
+                        st.error(f"Error completing authentication: {str(e)}")
+                        return None
+                else:
+                    st.error("Invalid state parameter. Please try authenticating again.")
                     return None
 
+            import uuid
+            
+            # Generate a unique state parameter
+            state = str(uuid.uuid4())
+            st.session_state.oauth_state = state
+            
             # Generate authorization URL with offline access and state
             auth_url, _ = flow.authorization_url(
                 access_type='offline',
                 include_granted_scopes='true',
-                state=st.session_state.get("oauth_state", ""),
+                state=state,
                 prompt='consent'
             )
-            
-            # Store state in session
-            st.session_state.oauth_state = flow.state
             
             # Display the auth URL to the user with clear instructions
             st.info("Click the button below to authenticate with your Google account")
