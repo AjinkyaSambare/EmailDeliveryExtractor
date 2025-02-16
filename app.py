@@ -7,8 +7,17 @@ from googleapiclient.discovery import build
 import base64
 from urllib.parse import parse_qs, urlparse
 
+# Configure OAuth settings to prevent the "Invalid redirect" error
+os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
+
 # Google API Scope
 SCOPES = ['https://www.googleapis.com/auth/gmail.readonly']
+
+st.set_page_config(
+    page_title="Email Extractor",
+    page_icon="📧",
+    layout="wide"
+)
 
 st.title("📧 Email - Extractor")
 
@@ -19,20 +28,123 @@ if "page_token" not in st.session_state:
     st.session_state.page_token = None
 if "oauth_state" not in st.session_state:
     st.session_state.oauth_state = None
+if "authentication_attempted" not in st.session_state:
+    st.session_state.authentication_attempted = False
+
+def clear_auth_state():
+    """Clear all authentication related state and files."""
+    if os.path.exists("token.pickle"):
+        os.remove("token.pickle")
+    st.session_state.logged_in_email = None
+    st.session_state.page_token = None
+    st.session_state.oauth_state = None
+    st.session_state.authentication_attempted = False
+
+def decode_email_body(payload):
+    """Decode the email body and extract inline images."""
+    body = ""
+    images = {}
+
+    if 'parts' in payload:
+        for part in payload['parts']:
+            if 'mimeType' not in part:
+                continue
+                
+            content_type = part['mimeType']
+            
+            if content_type == 'text/html' and 'data' in part.get('body', {}):
+                body = base64.urlsafe_b64decode(part['body']['data']).decode("utf-8")
+            elif content_type.startswith('image/'):
+                if 'filename' in part and 'data' in part.get('body', {}):
+                    try:
+                        image_data = base64.urlsafe_b64decode(part['body']['data'])
+                        content_id = next((header['value'].strip('<>') 
+                                        for header in part.get('headers', []) 
+                                        if header['name'].lower() == 'content-id'), 
+                                       part['filename'])
+                        images[content_id] = image_data
+                    except Exception as e:
+                        st.warning(f"Failed to decode image: {str(e)}")
+
+    else:
+        if 'body' in payload and 'data' in payload['body']:
+            try:
+                body = base64.urlsafe_b64decode(payload['body']['data']).decode("utf-8")
+            except Exception as e:
+                st.warning(f"Failed to decode email body: {str(e)}")
+                body = "Error decoding message content."
+
+    return body.strip(), images
+
+def fetch_emails(service, max_results=10, page_token=None):
+    """Fetch emails from Gmail API."""
+    try:
+        results = service.users().messages().list(
+            userId='me', 
+            maxResults=max_results, 
+            pageToken=page_token
+        ).execute()
+        
+        messages = results.get('messages', [])
+        next_page_token = results.get('nextPageToken')
+        email_list = []
+
+        for msg in messages:
+            try:
+                msg_data = service.users().messages().get(userId='me', id=msg['id']).execute()
+                headers = msg_data['payload']['headers']
+                
+                subject = next((header['value'] for header in headers 
+                              if header['name'].lower() == 'subject'), "No Subject")
+                sender = next((header['value'] for header in headers 
+                             if header['name'].lower() == 'from'), "Unknown Sender")
+                date = next((header['value'] for header in headers 
+                           if header['name'].lower() == 'date'), "No Date")
+                
+                body, images = decode_email_body(msg_data['payload'])
+                
+                email_list.append({
+                    "subject": subject,
+                    "from": sender,
+                    "date": date,
+                    "body": body,
+                    "images": images
+                })
+            except Exception as e:
+                st.warning(f"Failed to fetch email details: {str(e)}")
+                continue
+
+        return email_list, next_page_token
+    except Exception as e:
+        st.error(f"Failed to fetch emails: {str(e)}")
+        return [], None
 
 def authenticate_user():
     """Authenticate user using Google OAuth and store credentials securely."""
+    if not st.session_state.authentication_attempted:
+        return None
+
     creds = None
 
     # Load stored credentials if available
     if os.path.exists("token.pickle"):
-        with open("token.pickle", "rb") as token:
-            creds = pickle.load(token)
+        try:
+            with open("token.pickle", "rb") as token:
+                creds = pickle.load(token)
+        except Exception as e:
+            st.warning("Failed to load stored credentials. Starting fresh authentication.")
+            clear_auth_state()
+            return None
 
     # If credentials are invalid or expired, refresh or request new ones
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
+            try:
+                creds.refresh(Request())
+            except Exception as e:
+                st.warning("Failed to refresh credentials. Please authenticate again.")
+                clear_auth_state()
+                return None
         else:
             # Get the redirect URI from the client config
             client_config = st.secrets["google_client_config"]
@@ -68,117 +180,126 @@ def authenticate_user():
                     st.experimental_rerun()
                 except Exception as e:
                     st.error(f"Authentication failed: {str(e)}")
+                    clear_auth_state()
                     return None
             else:
-                # Create the flow using the client secrets
-                flow = Flow.from_client_config(
-                    {
-                        "web": client_config
-                    },
-                    scopes=SCOPES,
-                    redirect_uri=redirect_uri
-                )
+                try:
+                    # Create the flow using the client secrets
+                    flow = Flow.from_client_config(
+                        {
+                            "web": client_config
+                        },
+                        scopes=SCOPES,
+                        redirect_uri=redirect_uri
+                    )
 
-                # Generate the authorization URL
-                auth_url, state = flow.authorization_url(
-                    access_type='offline',
-                    include_granted_scopes='true'
-                )
+                    # Generate the authorization URL
+                    auth_url, state = flow.authorization_url(
+                        access_type='offline',
+                        include_granted_scopes='true'
+                    )
 
-                # Store the state in session state
-                st.session_state.oauth_state = state
+                    # Store the state in session state
+                    st.session_state.oauth_state = state
 
-                # Create the authorization URL button
-                st.markdown(f'''
-                    <a href="{auth_url}" target="_blank">
-                        <button style="background-color: #4CAF50; color: white; padding: 12px 20px; 
-                        border: none; border-radius: 4px; cursor: pointer;">
-                            Sign in with Google
-                        </button>
-                    </a>
-                ''', unsafe_allow_html=True)
-                return None
+                    # Create the authorization URL button
+                    st.markdown(f'''
+                        <a href="{auth_url}" target="_self">
+                            <button style="background-color: #4CAF50; color: white; padding: 12px 20px; 
+                            border: none; border-radius: 4px; cursor: pointer;">
+                                Sign in with Google
+                            </button>
+                        </a>
+                    ''', unsafe_allow_html=True)
+                    return None
+                except Exception as e:
+                    st.error(f"Failed to create authentication flow: {str(e)}")
+                    clear_auth_state()
+                    return None
 
-    return build('gmail', 'v1', credentials=creds) if creds else None
+    try:
+        return build('gmail', 'v1', credentials=creds) if creds else None
+    except Exception as e:
+        st.error(f"Failed to build Gmail service: {str(e)}")
+        clear_auth_state()
+        return None
 
-def decode_email_body(payload):
-    """Decode the email body and extract inline images."""
-    body = ""
-    images = {}
-
-    if 'parts' in payload:
-        for part in payload['parts']:
-            content_type = part['mimeType']
-            if content_type == 'text/html':
-                body = base64.urlsafe_b64decode(part['body']['data']).decode("utf-8")
-            elif content_type.startswith('image/') and 'filename' in part:
-                image_data = base64.urlsafe_b64decode(part['body']['data'])
-                content_id = part['headers'][0]['value'].strip('<>')
-                images[content_id] = image_data
-
-    else:
-        body = base64.urlsafe_b64decode(payload['body']['data']).decode("utf-8") if 'data' in payload['body'] else "No message content."
-
-    return body.strip(), images
-
-def fetch_emails(service, max_results=10, page_token=None):
-    """Fetch emails from Gmail API."""
-    results = service.users().messages().list(userId='me', maxResults=max_results, pageToken=page_token).execute()
-    messages = results.get('messages', [])
-    next_page_token = results.get('nextPageToken')
-    email_list = []
-
-    for msg in messages:
-        msg_data = service.users().messages().get(userId='me', id=msg['id']).execute()
-        headers = msg_data['payload']['headers']
-        subject = next((header['value'] for header in headers if header['name'] == 'Subject'), "No Subject")
-        sender = next((header['value'] for header in headers if header['name'] == 'From'), "Unknown Sender")
-        body, images = decode_email_body(msg_data['payload'])
-        email_list.append({"subject": subject, "from": sender, "body": body, "images": images})
-
-    return email_list, next_page_token
-
-# User Authentication
-service = authenticate_user()
-if service and not st.session_state.logged_in_email:
-    user_profile = service.users().getProfile(userId='me').execute()
-    st.session_state.logged_in_email = user_profile['emailAddress']
-    st.session_state.page_token = None
-    st.experimental_rerun()
-
-if st.session_state.logged_in_email:
-    st.success(f"Logged in as: {st.session_state.logged_in_email}")
-    if st.button("Log out"):
-        if os.path.exists("token.pickle"):
-            os.remove("token.pickle")
-        st.session_state.logged_in_email = None
-        st.session_state.page_token = None
-        st.session_state.oauth_state = None
+# Initial authentication button
+if not st.session_state.authentication_attempted:
+    if st.button("Sign in with Google", type="primary"):
+        st.session_state.authentication_attempted = True
         st.experimental_rerun()
 
-    # Display Emails
+# Only proceed with authentication if attempted
+if st.session_state.authentication_attempted:
     service = authenticate_user()
-    if service:
-        emails, next_page_token = fetch_emails(service, max_results=10, page_token=st.session_state.page_token)
+    if service and not st.session_state.logged_in_email:
+        try:
+            user_profile = service.users().getProfile(userId='me').execute()
+            st.session_state.logged_in_email = user_profile['emailAddress']
+            st.session_state.page_token = None
+            st.experimental_rerun()
+        except Exception as e:
+            st.error(f"Failed to get user profile: {str(e)}")
+            clear_auth_state()
 
-        for email in emails:
-            with st.expander(f"📧 {email['subject']} - {email['from']}"):
-                st.write(f"**From:** {email['from']}")
-                st.write(f"**Subject:** {email['subject']}")
-                st.write("**Body:**")
-                st.components.v1.html(email['body'], height=600, scrolling=True)
-
-                if email['images']:
-                    st.write("📷 **Inline Images:**")
-                    for content_id, image_data in email['images'].items():
-                        st.image(image_data, caption=f"Embedded Image: {content_id}", use_column_width=True)
-
-        # Pagination buttons
-        col1, col2 = st.columns(2)
+    if st.session_state.logged_in_email:
+        st.success(f"Logged in as: {st.session_state.logged_in_email}")
+        
+        # Add a button to download emails
+        col1, col2 = st.columns([1, 10])
         with col1:
-            if st.button("Previous Page") and st.session_state.page_token is not None:
-                st.session_state.page_token = None
-        with col2:
-            if next_page_token:
-                if st.button("Next Page"):
-                    st.session_state.page_token = next_page_token
+            if st.button("🚪 Log out"):
+                clear_auth_state()
+                st.experimental_rerun()
+
+        # Display Emails
+        service = authenticate_user()
+        if service:
+            try:
+                emails, next_page_token = fetch_emails(
+                    service, 
+                    max_results=10, 
+                    page_token=st.session_state.page_token
+                )
+
+                if not emails:
+                    st.info("No emails found in this page.")
+                else:
+                    for email in emails:
+                        with st.expander(
+                            f"📧 {email['subject']} - From: {email['from']} - Date: {email['date']}"
+                        ):
+                            st.write(f"**From:** {email['from']}")
+                            st.write(f"**Date:** {email['date']}")
+                            st.write(f"**Subject:** {email['subject']}")
+                            st.write("**Body:**")
+                            st.components.v1.html(email['body'], height=600, scrolling=True)
+
+                            if email['images']:
+                                st.write("📷 **Inline Images:**")
+                                for content_id, image_data in email['images'].items():
+                                    try:
+                                        st.image(
+                                            image_data, 
+                                            caption=f"Embedded Image: {content_id}", 
+                                            use_column_width=True
+                                        )
+                                    except Exception as e:
+                                        st.warning(f"Failed to display image: {str(e)}")
+
+                # Pagination buttons
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button("⬅️ Previous Page") and st.session_state.page_token is not None:
+                        st.session_state.page_token = None
+                        st.experimental_rerun()
+                with col2:
+                    if next_page_token:
+                        if st.button("➡️ Next Page"):
+                            st.session_state.page_token = next_page_token
+                            st.experimental_rerun()
+
+            except Exception as e:
+                st.error(f"An error occurred while fetching emails: {str(e)}")
+                clear_auth_state()
