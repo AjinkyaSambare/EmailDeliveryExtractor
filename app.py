@@ -34,14 +34,14 @@ def authenticate_user():
             flow = InstalledAppFlow.from_client_config({
                 "web": st.secrets["google_client_config"]
             }, SCOPES)
-            creds = flow.run_local_server(port=0)  # Automatically select an available port
+            # Change to run_console for deployment environment
+            creds = flow.run_console()
 
         # Save the credentials for future sessions
         with open("token.pickle", "wb") as token:
             pickle.dump(creds, token)
 
     return build('gmail', 'v1', credentials=creds)
-
 def decode_email_body(payload):
     """Decode the email body and extract inline images."""
     body = ""
