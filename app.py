@@ -6,17 +6,17 @@ from google.oauth2.credentials import Credentials
 from datetime import datetime
 import pytz
 
-# Configure Google OAuth2 credentials from Streamlit Cloud secrets
+# Configure Google OAuth2 credentials from nested Streamlit Cloud secrets
 def get_client_config():
     return {
         "web": {
-            "client_id": st.secrets.client_id,
-            "project_id": st.secrets.project_id,
-            "auth_uri": st.secrets.auth_uri,
-            "token_uri": st.secrets.token_uri,
-            "auth_provider_x509_cert_url": st.secrets.auth_provider_x509_cert_url,
-            "client_secret": st.secrets.client_secret,
-            "redirect_uris": st.secrets.redirect_uris
+            "client_id": st.secrets["google_client_config"]["client_id"],
+            "project_id": st.secrets["google_client_config"]["project_id"],
+            "auth_uri": st.secrets["google_client_config"]["auth_uri"],
+            "token_uri": st.secrets["google_client_config"]["token_uri"],
+            "auth_provider_x509_cert_url": st.secrets["google_client_config"]["auth_provider_x509_cert_url"],
+            "client_secret": st.secrets["google_client_config"]["client_secret"],
+            "redirect_uris": st.secrets["google_client_config"]["redirect_uris"]
         }
     }
 
@@ -101,7 +101,7 @@ def main():
                 flow = Flow.from_client_config(
                     get_client_config(),
                     scopes=SCOPES,
-                    redirect_uri=st.secrets.redirect_uris[0]  # Use the first redirect URI
+                    redirect_uri=st.secrets["google_client_config"]["redirect_uris"][0]
                 )
                 
                 auth_url, _ = flow.authorization_url(prompt='consent')
@@ -118,7 +118,6 @@ def main():
                         st.error(f"❌ Authentication failed: {str(e)}")
             except Exception as e:
                 st.error(f"❌ Error initiating authentication: {str(e)}")
-                st.write("Available secrets:", list(st.secrets.keys()))  # Debug line
     else:
         # Logout button in sidebar
         if st.sidebar.button("🚪 Logout"):
@@ -169,7 +168,6 @@ def main():
 
 if __name__ == "__main__":
     main()
-
 
 
 # import streamlit as st
