@@ -1,29 +1,89 @@
+# pages/1_🏠_Home.py
 import streamlit as st
-import os
-import pickle
-import base64
-import json
 from google_auth_oauthlib.flow import Flow
-from google.auth.transport.requests import Request
-from googleapiclient.discovery import build
+import pickle
+import os
 
 # Configure page settings
-st.set_page_config(page_title="Email Extractor", page_icon="📧", layout="wide")
+st.set_page_config(page_title="Email Extractor - Login", page_icon="🏠", layout="wide")
+
+# Initialize session state
+if "credentials" not in st.session_state:
+    st.session_state.credentials = None
+
+st.title("📧 Email Extractor - Login")
 
 # Google API Scope
 SCOPES = ['https://www.googleapis.com/auth/gmail.readonly']
 
-st.title("📧 Email Extractor")
+def setup_google_oauth():
+    """Setup Google OAuth flow."""
+    if "google_client_config" not in st.secrets:
+        st.error("Google client configuration is missing.")
+        return None
 
-# Initialize session state variables
-if "oauth_state" not in st.session_state:
-    st.session_state.oauth_state = None
-if "logged_in_email" not in st.session_state:
-    st.session_state.logged_in_email = None
+    config = st.secrets["google_client_config"]
+    client_config = {
+        "web": {
+            "client_id": config["client_id"],
+            "project_id": config["project_id"],
+            "auth_uri": config["auth_uri"],
+            "token_uri": config["token_uri"],
+            "auth_provider_x509_cert_url": config["auth_provider_x509_cert_url"],
+            "client_secret": config["client_secret"],
+            "redirect_uris": config["redirect_uris"]
+        }
+    }
+    
+    # Use the production Streamlit URL
+    redirect_uri = "https://emaildelivery.streamlit.app/Emails"
+    
+    flow = Flow.from_client_config(
+        client_config,
+        scopes=SCOPES,
+        redirect_uri=redirect_uri
+    )
+    
+    auth_url, state = flow.authorization_url(
+        access_type='offline',
+        include_granted_scopes='true'
+    )
+    
+    return auth_url
+
+def main():
+    st.write("Welcome to Email Extractor! Please sign in with your Google account to continue.")
+    
+    auth_url = setup_google_oauth()
+    if auth_url:
+        st.info("Click the button below to authenticate with your Google account")
+        st.markdown(f"""
+            <a href='{auth_url}' target='_blank'>
+                <button style='padding: 8px 16px; background-color: #FF4B4B; color: white; border: none; border-radius: 4px; cursor: pointer;'>
+                    Sign in with Google
+                </button>
+            </a>
+        """, unsafe_allow_html=True)
+
+if __name__ == "__main__":
+    main()
+
+# pages/2_📧_Emails.py
+import streamlit as st
+import base64
+from google.auth.transport.requests import Request
+from googleapiclient.discovery import build
+
+# Configure page settings
+st.set_page_config(page_title="Email Extractor - Emails", page_icon="📧", layout="wide")
+
+# Initialize session state
 if "page_token" not in st.session_state:
     st.session_state.page_token = None
-if "credentials" not in st.session_state:
-    st.session_state.credentials = None
+if "logged_in_email" not in st.session_state:
+    st.session_state.logged_in_email = None
+
+st.title("📧 Your Emails")
 
 def get_google_service():
     """Get authenticated Google service or None."""
@@ -41,39 +101,6 @@ def get_google_service():
             return None
     return None
 
-def setup_google_oauth():
-    """Setup Google OAuth flow."""
-    if "google_client_config" not in st.secrets:
-        st.error("Google client configuration is missing. Please configure the secrets.")
-        return None
-
-    config = st.secrets["google_client_config"]
-    client_config = {
-        "web": {
-            "client_id": config["client_id"],
-            "project_id": config["project_id"],
-            "auth_uri": config["auth_uri"],
-            "token_uri": config["token_uri"],
-            "auth_provider_x509_cert_url": config["auth_provider_x509_cert_url"],
-            "client_secret": config["client_secret"],
-            "redirect_uris": config["redirect_uris"]
-        }
-    }
-    
-    flow = Flow.from_client_config(
-        client_config,
-        scopes=SCOPES,
-        redirect_uri=config["redirect_uris"][0]
-    )
-    
-    auth_url, state = flow.authorization_url(
-        access_type='offline',
-        include_granted_scopes='true'
-    )
-    
-    st.session_state.oauth_state = state
-    return auth_url
-
 def decode_email_body(payload):
     """Decode the email body and extract inline images."""
     body = ""
@@ -89,7 +116,7 @@ def decode_email_body(payload):
                     image_data = base64.urlsafe_b64decode(part['body']['data'])
                     content_id = part.get('headers', [{'value': 'unknown'}])[0]['value'].strip('<>')
                     images[content_id] = image_data
-            except Exception as e:
+            except Exception:
                 continue
     else:
         try:
@@ -134,7 +161,6 @@ def fetch_emails(service, max_results=10, page_token=None):
         st.error(f"Error fetching emails: {str(e)}")
         return [], None
 
-# Main app logic
 def main():
     service = get_google_service()
     
@@ -143,20 +169,12 @@ def main():
         st.success(f"Logged in as: {st.session_state.logged_in_email}")
         if st.button("Log out"):
             st.session_state.clear()
-            st.experimental_rerun()
+            st.switch_page("pages/1_🏠_Home.py")
     
-    # If not logged in, show login button
+    # If not authenticated, redirect to home page
     if not service:
-        auth_url = setup_google_oauth()
-        if auth_url:
-            st.info("Click the button below to authenticate with your Google account")
-            st.markdown(f"""
-                <a href='{auth_url}' target='_blank'>
-                    <button style='padding: 8px 16px; background-color: #FF4B4B; color: white; border: none; border-radius: 4px; cursor: pointer;'>
-                        Sign in with Google
-                    </button>
-                </a>
-            """, unsafe_allow_html=True)
+        st.warning("Please sign in first")
+        st.switch_page("pages/1_🏠_Home.py")
         return
 
     # If service exists but email not set, get user profile
@@ -167,6 +185,7 @@ def main():
             st.experimental_rerun()
         except Exception as e:
             st.error(f"Error getting user profile: {str(e)}")
+            st.switch_page("pages/1_🏠_Home.py")
             return
 
     # Display emails
