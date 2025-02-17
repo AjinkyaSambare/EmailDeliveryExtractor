@@ -1,25 +1,18 @@
 import streamlit as st
-import os
 from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
-from google.oauth2.credentials import Credentials
 from datetime import datetime
 import pytz
-import json
+from urllib.parse import urlparse, parse_qs
 
-# Debug function to safely display credential info
-def debug_credentials(creds):
-    if creds:
-        return {
-            "valid": creds.valid,
-            "expired": creds.expired,
-            "scopes": creds.scopes,
-            "token_uri": creds.token_uri,
-        }
-    return None
+# Initialize session states
+if 'credentials' not in st.session_state:
+    st.session_state.credentials = None
+if 'auth_in_progress' not in st.session_state:
+    st.session_state.auth_in_progress = False
 
 def get_client_config():
-    config = {
+    return {
         "web": {
             "client_id": st.secrets["google_client_config"]["client_id"],
             "project_id": st.secrets["google_client_config"]["project_id"],
@@ -30,95 +23,150 @@ def get_client_config():
             "redirect_uris": st.secrets["google_client_config"]["redirect_uris"]
         }
     }
-    # Debug output
-    st.write("Client Config (excluding sensitive data):", {
-        "project_id": config["web"]["project_id"],
-        "redirect_uris": config["web"]["redirect_uris"]
-    })
-    return config
 
-# Gmail API scopes
 SCOPES = ['https://www.googleapis.com/auth/gmail.readonly']
+
+def get_auth_code_from_url():
+    """Extract authorization code from URL if present"""
+    try:
+        query_params = st.experimental_get_query_params()
+        if 'code' in query_params:
+            return query_params['code'][0]
+    except:
+        return None
+    return None
+
+def create_gmail_service(credentials):
+    try:
+        return build('gmail', 'v1', credentials=credentials)
+    except Exception as e:
+        st.error(f"Error creating Gmail service: {str(e)}")
+        return None
+
+def get_email_messages(service, max_results=50):
+    try:
+        results = service.users().messages().list(userId='me', maxResults=max_results).execute()
+        messages = results.get('messages', [])
+        
+        if not messages:
+            st.info("No messages found in the inbox.")
+            return []
+            
+        email_data = []
+        with st.spinner('Loading emails...'):
+            for message in messages:
+                msg = service.users().messages().get(userId='me', id=message['id']).execute()
+                headers = msg['payload']['headers']
+                
+                subject = next((header['value'] for header in headers if header['name'].lower() == 'subject'), 'No Subject')
+                sender = next((header['value'] for header in headers if header['name'].lower() == 'from'), 'Unknown Sender')
+                date_str = next((header['value'] for header in headers if header['name'].lower() == 'date'), '')
+                
+                try:
+                    date_obj = datetime.strptime(date_str.split(' (')[0].strip(), '%a, %d %b %Y %H:%M:%S %z')
+                    formatted_date = date_obj.astimezone(pytz.UTC).strftime('%Y-%m-%d %H:%M:%S UTC')
+                except:
+                    formatted_date = date_str
+                    
+                email_data.append({
+                    'subject': subject,
+                    'sender': sender,
+                    'date': formatted_date,
+                    'snippet': msg.get('snippet', 'No preview available')
+                })
+        return email_data
+    except Exception as e:
+        st.error(f"Error fetching emails: {str(e)}")
+        return []
 
 def main():
     st.set_page_config(page_title="Gmail Inbox Viewer", page_icon="📧", layout="wide")
     st.title("📧 Gmail Inbox Viewer")
+
+    # Check for authorization code in URL
+    auth_code = get_auth_code_from_url()
     
-    # Debug section in sidebar
-    st.sidebar.title("Debug Info")
-    if 'credentials' in st.session_state:
-        st.sidebar.write("Credentials Status:", debug_credentials(st.session_state.credentials))
-    else:
-        st.sidebar.write("No credentials in session state")
-    
-    # Initialize session state
-    if 'credentials' not in st.session_state:
-        st.session_state.credentials = None
-    
-    # Authentication UI
+    # Handle authentication and authorization
     if st.session_state.credentials is None:
-        st.write("Please login to access your Gmail inbox.")
-        if st.button("🔐 Login with Gmail"):
+        if auth_code and not st.session_state.auth_in_progress:
             try:
+                st.session_state.auth_in_progress = True
                 flow = Flow.from_client_config(
                     get_client_config(),
                     scopes=SCOPES,
                     redirect_uri=st.secrets["google_client_config"]["redirect_uris"][0]
                 )
-                
-                auth_url, _ = flow.authorization_url(prompt='consent')
-                st.markdown(f"[Click here to authorize]({auth_url})")
-                
-                st.markdown("""
-                ### How to get the authorization code:
-                1. Click the authorization link above
-                2. Sign in to Google and grant permissions
-                3. After authorization, you'll be redirected to a URL with a code parameter
-                4. Copy the entire code parameter (everything after `code=` and before `&scope`)
-                5. Paste it below
-                """)
-                
-                code = st.text_input("Enter the authorization code:")
-                if code:
-                    try:
-                        st.write("Attempting to fetch token with code...")
-                        token = flow.fetch_token(code=code)
-                        st.write("Token fetched successfully:", bool(token))
-                        
-                        st.write("Setting credentials in session state...")
-                        st.session_state.credentials = flow.credentials
-                        st.write("Credentials set in session state:", bool(st.session_state.credentials))
-                        
-                        st.success("✅ Successfully logged in!")
-                        st.write("Debug - Credentials info:", debug_credentials(st.session_state.credentials))
-                        
-                        st.experimental_rerun()
-                    except Exception as e:
-                        st.error(f"❌ Authentication failed: {str(e)}")
-                        st.error("Please try the authorization process again to get a new code.")
-                        st.write("Error details:", str(e))
+                flow.fetch_token(code=auth_code)
+                st.session_state.credentials = flow.credentials
+                st.session_state.auth_in_progress = False
+                st.experimental_rerun()
             except Exception as e:
-                st.error(f"❌ Error initiating authentication: {str(e)}")
-                st.write("Error details:", str(e))
-    else:
-        st.sidebar.button("🚪 Logout", on_click=lambda: setattr(st.session_state, 'credentials', None))
+                st.error(f"Authentication failed: {str(e)}")
+                st.session_state.auth_in_progress = False
         
-        try:
-            st.write("Attempting to create Gmail service...")
-            service = build('gmail', 'v1', credentials=st.session_state.credentials)
-            st.write("Gmail service created successfully")
-            
-            # Rest of your email display code...
-            
-        except Exception as e:
-            st.error(f"Error creating Gmail service: {str(e)}")
-            st.write("Error details:", str(e))
+        if not st.session_state.auth_in_progress:
+            st.write("Please login to access your Gmail inbox.")
+            if st.button("🔐 Login with Gmail"):
+                try:
+                    flow = Flow.from_client_config(
+                        get_client_config(),
+                        scopes=SCOPES,
+                        redirect_uri=st.secrets["google_client_config"]["redirect_uris"][0]
+                    )
+                    auth_url, _ = flow.authorization_url(prompt='consent')
+                    st.session_state.auth_in_progress = True
+                    st.markdown(f"[Click here to authorize]({auth_url})")
+                except Exception as e:
+                    st.error(f"Error initiating authentication: {str(e)}")
+                    st.session_state.auth_in_progress = False
+    else:
+        # Logout button
+        if st.sidebar.button("🚪 Logout"):
             st.session_state.credentials = None
+            st.session_state.auth_in_progress = False
             st.experimental_rerun()
+        
+        # Display emails
+        service = create_gmail_service(st.session_state.credentials)
+        if service:
+            emails = get_email_messages(service)
+            if emails:
+                st.subheader("Your Inbox")
+                
+                # Search and filter options
+                col1, col2 = st.columns([3, 1])
+                with col1:
+                    search_term = st.text_input("Search emails", "").lower()
+                with col2:
+                    sort_by = st.selectbox("Sort by", ["Date", "Sender", "Subject"])
+                
+                # Filter and sort emails
+                filtered_emails = [
+                    email for email in emails 
+                    if not search_term or 
+                    search_term in email['subject'].lower() or 
+                    search_term in email['sender'].lower() or 
+                    search_term in email['snippet'].lower()
+                ]
+                
+                if sort_by == "Date":
+                    filtered_emails.sort(key=lambda x: x['date'], reverse=True)
+                elif sort_by == "Sender":
+                    filtered_emails.sort(key=lambda x: x['sender'].lower())
+                else:
+                    filtered_emails.sort(key=lambda x: x['subject'].lower())
+                
+                # Display emails
+                for email in filtered_emails:
+                    with st.expander(f"{email['subject']} - {email['sender']}"):
+                        st.write(f"**From:** {email['sender']}")
+                        st.write(f"**Date:** {email['date']}")
+                        st.write(f"**Preview:**")
+                        st.write(email['snippet'])
+                        st.markdown("---")
 
 if __name__ == "__main__":
     main()
-
 
 # import streamlit as st
 # import os
