@@ -6,17 +6,17 @@ from google.oauth2.credentials import Credentials
 from datetime import datetime
 import pytz
 
-# Configure Google OAuth2 credentials securely
+# Configure Google OAuth2 credentials from Streamlit Cloud secrets
 def get_client_config():
     return {
         "web": {
-            "client_id": st.secrets["client_id"],
-            "project_id": "delivery-email-tracking",
-            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-            "token_uri": "https://oauth2.googleapis.com/token",
-            "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-            "client_secret": st.secrets["client_secret"],
-            "redirect_uris": ["https://emaildelivery.streamlit.app"]
+            "client_id": st.secrets.client_id,
+            "project_id": st.secrets.project_id,
+            "auth_uri": st.secrets.auth_uri,
+            "token_uri": st.secrets.token_uri,
+            "auth_provider_x509_cert_url": st.secrets.auth_provider_x509_cert_url,
+            "client_secret": st.secrets.client_secret,
+            "redirect_uris": st.secrets.redirect_uris
         }
     }
 
@@ -85,47 +85,6 @@ def get_email_messages(service, max_results=50):
         st.error(f"Error fetching emails: {str(e)}")
         return []
 
-def render_email_list(emails):
-    """Render the email list with sorting and filtering options"""
-    if not emails:
-        return
-
-    st.subheader("Your Inbox")
-    
-    # Search and filter options
-    col1, col2 = st.columns([3, 1])
-    with col1:
-        search_term = st.text_input("Search emails", "").lower()
-    with col2:
-        sort_by = st.selectbox("Sort by", ["Date", "Sender", "Subject"])
-    
-    # Filter emails based on search
-    filtered_emails = emails
-    if search_term:
-        filtered_emails = [
-            email for email in emails 
-            if search_term in email['subject'].lower() 
-            or search_term in email['sender'].lower() 
-            or search_term in email['snippet'].lower()
-        ]
-    
-    # Sort emails
-    if sort_by == "Date":
-        filtered_emails = sorted(filtered_emails, key=lambda x: x['date'], reverse=True)
-    elif sort_by == "Sender":
-        filtered_emails = sorted(filtered_emails, key=lambda x: x['sender'].lower())
-    else:  # Subject
-        filtered_emails = sorted(filtered_emails, key=lambda x: x['subject'].lower())
-    
-    # Display emails
-    for email in filtered_emails:
-        with st.expander(f"{email['subject']} - {email['sender']}"):
-            st.write(f"**From:** {email['sender']}")
-            st.write(f"**Date:** {email['date']}")
-            st.write(f"**Preview:**")
-            st.write(email['snippet'])
-            st.markdown("---")
-
 def main():
     st.set_page_config(page_title="Gmail Inbox Viewer", page_icon="📧", layout="wide")
     st.title("📧 Gmail Inbox Viewer")
@@ -142,7 +101,7 @@ def main():
                 flow = Flow.from_client_config(
                     get_client_config(),
                     scopes=SCOPES,
-                    redirect_uri="https://emaildelivery.streamlit.app"
+                    redirect_uri=st.secrets.redirect_uris[0]  # Use the first redirect URI
                 )
                 
                 auth_url, _ = flow.authorization_url(prompt='consent')
@@ -159,6 +118,7 @@ def main():
                         st.error(f"❌ Authentication failed: {str(e)}")
             except Exception as e:
                 st.error(f"❌ Error initiating authentication: {str(e)}")
+                st.write("Available secrets:", list(st.secrets.keys()))  # Debug line
     else:
         # Logout button in sidebar
         if st.sidebar.button("🚪 Logout"):
@@ -170,11 +130,45 @@ def main():
         service = create_gmail_service(st.session_state.credentials)
         if service:
             emails = get_email_messages(service)
-            render_email_list(emails)
+            if emails:
+                st.subheader("Your Inbox")
+                
+                # Search and filter options
+                col1, col2 = st.columns([3, 1])
+                with col1:
+                    search_term = st.text_input("Search emails", "").lower()
+                with col2:
+                    sort_by = st.selectbox("Sort by", ["Date", "Sender", "Subject"])
+                
+                # Filter emails
+                filtered_emails = emails
+                if search_term:
+                    filtered_emails = [
+                        email for email in emails 
+                        if search_term in email['subject'].lower() 
+                        or search_term in email['sender'].lower() 
+                        or search_term in email['snippet'].lower()
+                    ]
+                
+                # Sort emails
+                if sort_by == "Date":
+                    filtered_emails = sorted(filtered_emails, key=lambda x: x['date'], reverse=True)
+                elif sort_by == "Sender":
+                    filtered_emails = sorted(filtered_emails, key=lambda x: x['sender'].lower())
+                else:  # Subject
+                    filtered_emails = sorted(filtered_emails, key=lambda x: x['subject'].lower())
+                
+                # Display emails
+                for email in filtered_emails:
+                    with st.expander(f"{email['subject']} - {email['sender']}"):
+                        st.write(f"**From:** {email['sender']}")
+                        st.write(f"**Date:** {email['date']}")
+                        st.write(f"**Preview:**")
+                        st.write(email['snippet'])
+                        st.markdown("---")
 
 if __name__ == "__main__":
     main()
-
 
 
 
