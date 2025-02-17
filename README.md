@@ -1,4 +1,4 @@
-Join the Community
+### Join the Community
 [Join Curious PM Community](https://curious.pm) to connect, share, and learn with others!
 
 This Streamlit app enables users to authenticate with Google OAuth, access their Gmail, and view emails and images directly in a web interface.
