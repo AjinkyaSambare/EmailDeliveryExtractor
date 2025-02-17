@@ -1,4 +1,4 @@
-# pages/1_🏠_Home.py
+# Home.py (main file)
 import streamlit as st
 from google_auth_oauthlib.flow import Flow
 import pickle
@@ -35,8 +35,8 @@ def setup_google_oauth():
         }
     }
     
-    # Use the production Streamlit URL
-    redirect_uri = "https://emaildelivery.streamlit.app/Emails"
+    # Use the production Streamlit URL with correct page path
+    redirect_uri = "https://emaildelivery.streamlit.app/Email_Display"  # Match the filename
     
     flow = Flow.from_client_config(
         client_config,
