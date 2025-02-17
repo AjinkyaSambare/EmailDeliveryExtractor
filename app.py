@@ -86,6 +86,12 @@ def main():
     # Check for authorization code in URL
     auth_code = get_auth_code_from_url()
     
+    # Debug info
+    st.sidebar.write("Debug Info:")
+    st.sidebar.write(f"Auth Code Present: {bool(auth_code)}")
+    st.sidebar.write(f"Auth in Progress: {st.session_state.auth_in_progress}")
+    st.sidebar.write(f"Has Credentials: {bool(st.session_state.credentials)}")
+    
     # Handle authentication and authorization
     if st.session_state.credentials is None:
         if auth_code and not st.session_state.auth_in_progress:
@@ -99,7 +105,7 @@ def main():
                 flow.fetch_token(code=auth_code)
                 st.session_state.credentials = flow.credentials
                 st.session_state.auth_in_progress = False
-                st.experimental_rerun()
+                st.rerun()
             except Exception as e:
                 st.error(f"Authentication failed: {str(e)}")
                 st.session_state.auth_in_progress = False
@@ -124,7 +130,7 @@ def main():
         if st.sidebar.button("🚪 Logout"):
             st.session_state.credentials = None
             st.session_state.auth_in_progress = False
-            st.experimental_rerun()
+            st.rerun()
         
         # Display emails
         service = create_gmail_service(st.session_state.credentials)
