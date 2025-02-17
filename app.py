@@ -7,35 +7,38 @@ from google_auth_oauthlib.flow import Flow
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 
-# Configure page settings - must be the first Streamlit command
+# Configure page settings
 st.set_page_config(page_title="Email Extractor", page_icon="📧", layout="wide")
 
 # Google API Scope
 SCOPES = ['https://www.googleapis.com/auth/gmail.readonly']
 
-st.title("📧 Email - Extractor")
+st.title("📧 Email Extractor")
 
-# Global session state variables
+# Initialize session state variables
 if "logged_in_email" not in st.session_state:
     st.session_state.logged_in_email = None
 if "page_token" not in st.session_state:
     st.session_state.page_token = None
 if "credentials" not in st.session_state:
     st.session_state.credentials = None
+if "authentication_complete" not in st.session_state:
+    st.session_state.authentication_complete = False
 
 def authenticate_user():
     """Authenticate user using Google OAuth and store credentials securely."""
     creds = st.session_state.get('credentials')
 
-    # If credentials are invalid or expired, refresh or request new ones
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
+            st.session_state.credentials = creds
+            st.session_state.authentication_complete = True
+            return build('gmail', 'v1', credentials=creds)
         else:
-            # Check if required secrets are configured
             if "google_client_config" not in st.secrets:
                 st.error("Google client configuration is missing. Please configure the secrets.")
-                st.stop()
+                return None
 
             config = st.secrets["google_client_config"]
             required_keys = ["client_id", "client_secret", "redirect_uris"]
@@ -43,12 +46,9 @@ def authenticate_user():
             
             if missing_keys:
                 st.error(f"Missing required configuration: {', '.join(missing_keys)}")
-                st.stop()
+                return None
 
-            # Get the first redirect URI from the array
             redirect_uri = config["redirect_uris"][0]
-
-            # Load client secrets from Streamlit secrets exactly as provided
             client_config = {
                 "web": {
                     "client_id": config["client_id"],
@@ -67,16 +67,16 @@ def authenticate_user():
                 redirect_uri=redirect_uri
             )
             
-            # Generate authorization URL with offline access
             auth_url, _ = flow.authorization_url(
                 access_type='offline',
                 include_granted_scopes='true'
             )
-            
-            # Display the auth URL to the user with clear instructions
-            st.info("Click the button below to authenticate with your Google account")
-            st.markdown(f"<a href='{auth_url}' target='_blank'><button style='padding: 8px 16px; background-color: #FF4B4B; color: white; border: none; border-radius: 4px; cursor: pointer;'>Sign in with Google</button></a>", unsafe_allow_html=True)
-            return None  # Return None to handle the callback in the main flow
+
+            # Only show authentication button if not already authenticated
+            if not st.session_state.authentication_complete:
+                st.info("Click the button below to authenticate with your Google account")
+                st.markdown(f"<a href='{auth_url}' target='_blank'><button style='padding: 8px 16px; background-color: #FF4B4B; color: white; border: none; border-radius: 4px; cursor: pointer;'>Sign in with Google</button></a>", unsafe_allow_html=True)
+            return None
 
     return build('gmail', 'v1', credentials=creds)
 
@@ -145,52 +145,56 @@ def fetch_emails(service, max_results=10, page_token=None):
         st.error(f"Error fetching emails: {str(e)}")
         return [], None
 
-# Main App Layout
-st.write("Connect to your Gmail account to extract and view your emails.")
-
-# User Authentication
-if not st.session_state.logged_in_email:
-    if st.button("Sign in with Google"):
-        service = authenticate_user()
-        if service:
+# Main App Logic
+def main():
+    # Show login status
+    if st.session_state.logged_in_email:
+        st.success(f"Logged in as: {st.session_state.logged_in_email}")
+        if st.button("Log out"):
+            st.session_state.logged_in_email = None
+            st.session_state.credentials = None
+            st.session_state.page_token = None
+            st.session_state.authentication_complete = False
+            st.experimental_rerun()
+    
+    # Authentication and Email Display Logic
+    service = authenticate_user()
+    
+    if service:
+        if not st.session_state.logged_in_email:
             try:
                 user_profile = service.users().getProfile(userId='me').execute()
                 st.session_state.logged_in_email = user_profile['emailAddress']
-                st.session_state.page_token = None
+                st.session_state.authentication_complete = True
+                st.experimental_rerun()
             except Exception as e:
                 st.error(f"Error getting user profile: {str(e)}")
-else:
-    st.success(f"Logged in as: {st.session_state.logged_in_email}")
-    if st.button("Log out"):
-        st.session_state.logged_in_email = None
-        st.session_state.credentials = None
-        st.session_state.page_token = None
-        st.experimental_rerun()
+        
+        # Display emails if authenticated
+        if st.session_state.authentication_complete:
+            emails, next_page_token = fetch_emails(service, max_results=10, page_token=st.session_state.page_token)
 
-# Display Emails
-if st.session_state.logged_in_email:
-    service = authenticate_user()
-    if service:
-        emails, next_page_token = fetch_emails(service, max_results=10, page_token=st.session_state.page_token)
+            if emails:
+                for email in emails:
+                    with st.expander(f"📧 {email['subject']} - {email['from']}"):
+                        st.write(f"**From:** {email['from']}")
+                        st.write(f"**Subject:** {email['subject']}")
+                        st.write("**Body:**")
+                        st.components.v1.html(email['body'], height=600, scrolling=True)
 
-        if emails:
-            for email in emails:
-                with st.expander(f"📧 {email['subject']} - {email['from']}"):
-                    st.write(f"**From:** {email['from']}")
-                    st.write(f"**Subject:** {email['subject']}")
-                    st.write("**Body:**")
-                    st.components.v1.html(email['body'], height=600, scrolling=True)
+                        if email['images']:
+                            st.write("📷 **Inline Images:**")
+                            for content_id, image_data in email['images'].items():
+                                st.image(image_data, caption=f"Embedded Image: {content_id}", use_column_width=True)
 
-                    if email['images']:
-                        st.write("📷 **Inline Images:**")
-                        for content_id, image_data in email['images'].items():
-                            st.image(image_data, caption=f"Embedded Image: {content_id}", use_column_width=True)
+                # Pagination controls
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button("Previous Page") and st.session_state.page_token is not None:
+                        st.session_state.page_token = None
+                with col2:
+                    if next_page_token and st.button("Next Page"):
+                        st.session_state.page_token = next_page_token
 
-            # Pagination controls
-            col1, col2 = st.columns(2)
-            with col1:
-                if st.button("Previous Page") and st.session_state.page_token is not None:
-                    st.session_state.page_token = None
-            with col2:
-                if next_page_token and st.button("Next Page"):
-                    st.session_state.page_token = next_page_token
+if __name__ == "__main__":
+    main()
