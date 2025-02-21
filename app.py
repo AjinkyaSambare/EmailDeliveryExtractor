@@ -231,29 +231,93 @@ def insert_into_db(data: Dict[str, Any], email_id: str) -> bool:
 def get_email_messages(service, max_results=100):
     """Fetch and process delivery-related emails with detailed progress tracking."""
     try:
-        # Create status containers
-        fetch_status = st.empty()
-        fetch_progress = st.progress(0)
-        process_status = st.empty()
-        process_progress = st.progress(0)
+        st.markdown("### 📧 Processing Emails")
+        status_text = st.empty()
+        progress_bar = st.progress(0)
         
-        fetch_status.text("📥 Fetching emails from Gmail...")
+        status_text.text("📥 Fetching emails from Gmail...")
         results = service.users().messages().list(userId='me', maxResults=max_results).execute()
         messages = results.get('messages', [])
         
         if not messages:
-            fetch_status.info("No messages found in the inbox.")
+            status_text.info("No messages found in the inbox.")
             return []
             
         email_data = []
         chat_client = AzureOpenAIChat()
         total_messages = len(messages)
         
-        fetch_status.text(f"🔍 Found {total_messages} emails to analyze")
-        processed_count = 0
-        delivery_count = 0
+        status_text.text(f"🔍 Found {total_messages} emails to analyze")
+        
+        for idx, message in enumerate(messages):
+            # Update progress
+            progress = int((idx + 1) * 100 / total_messages)
+            progress_bar.progress(progress)
             
-        for message in messages:
+            try:
+                msg = service.users().messages().get(userId='me', id=message['id']).execute()
+                headers = msg['payload']['headers']
+                
+                subject = next((header['value'] for header in headers if header['name'].lower() == 'subject'), 'No Subject')
+                sender = next((header['value'] for header in headers if header['name'].lower() == 'from'), 'Unknown Sender')
+                date_str = next((header['value'] for header in headers if header['name'].lower() == 'date'), '')
+                snippet = msg.get('snippet', 'No preview available')
+                
+                # Only process delivery-related emails
+                if is_delivery_related(subject, snippet):
+                    status_text.text(f"📦 Processing delivery email {idx + 1}/{total_messages}: {subject}")
+                    
+                    try:
+                        date_obj = datetime.strptime(date_str.split(' (')[0].strip(), '%a, %d %b %Y %H:%M:%S %z')
+                        formatted_date = date_obj.astimezone(pytz.UTC).strftime('%Y-%m-%d %H:%M:%S UTC')
+                    except:
+                        formatted_date = date_str
+                    
+                    # Extract full email body
+                    email_body = ""
+                    if 'parts' in msg['payload']:
+                        for part in msg['payload']['parts']:
+                            if part['mimeType'] == 'text/plain':
+                                email_body = part.get('body', {}).get('data', '')
+                    else:
+                        email_body = msg['payload'].get('body', {}).get('data', '')
+                    
+                    # Process through GPT
+                    response = chat_client.extract_delivery_details(f"Subject: {subject}\n\nBody: {snippet}\n\n{email_body}")
+                    if response and "choices" in response:
+                        try:
+                            extracted_text = response["choices"][0]["message"]["content"]
+                            # Clean up the JSON string
+                            extracted_text = extracted_text.strip()
+                            if extracted_text.startswith("```json"):
+                                extracted_text = extracted_text[7:-3]  # Remove ```json and ``` markers
+                            
+                            parsed_json = json.loads(extracted_text)
+                            # Add email metadata
+                            parsed_json['email_id'] = message['id']
+                            parsed_json['subject'] = subject
+                            parsed_json['sender'] = sender
+                            parsed_json['date'] = formatted_date
+                            email_data.append(parsed_json)
+                            
+                            # Store in database
+                            insert_into_db(parsed_json, message['id'])
+                        except json.JSONDecodeError as e:
+                            st.warning(f"Failed to parse response for email: {subject}\nError: {str(e)}")
+                            continue
+            except Exception as e:
+                st.warning(f"Error processing email {subject}: {str(e)}")
+                continue
+        
+        status_text.text(f"✅ Completed processing {len(email_data)} delivery emails")
+        progress_bar.progress(100)
+        return email_data
+        
+    except Exception as e:
+        st.error(f"Error fetching emails: {str(e)}")
+        return []
+            
+            for message in messages:
                 msg = service.users().messages().get(userId='me', id=message['id']).execute()
                 headers = msg['payload']['headers']
                 
@@ -297,7 +361,7 @@ def get_email_messages(service, max_results=100):
                 processed_count += 1
                 progress_bar.progress(processed_count / len(messages))
             
-                progress_bar.empty()
+            progress_bar.empty()
         return email_data
     except Exception as e:
         st.error(f"Error fetching emails: {str(e)}")
