@@ -3,6 +3,7 @@ from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
 from datetime import datetime
 import pytz
+import time
 from urllib.parse import urlparse, parse_qs
 
 # Initialize session states
@@ -10,6 +11,15 @@ if 'credentials' not in st.session_state:
     st.session_state.credentials = None
 if 'auth_in_progress' not in st.session_state:
     st.session_state.auth_in_progress = False
+if 'last_refresh' not in st.session_state:
+    st.session_state.last_refresh = time.time()
+
+# List of delivery-related keywords to filter emails
+DELIVERY_KEYWORDS = [
+    'delivered', 'delivery', 'shipping', 'shipment', 'tracking', 'package',
+    'courier', 'fedex', 'ups', 'usps', 'dhl', 'amazon delivery', 'order shipped',
+    'out for delivery', 'arrival', 'dispatched'
+]
 
 def get_client_config():
     return {
@@ -43,6 +53,11 @@ def create_gmail_service(credentials):
         st.error(f"Error creating Gmail service: {str(e)}")
         return None
 
+def is_delivery_related(subject, snippet):
+    """Check if the email is delivery-related based on keywords"""
+    text = (subject + ' ' + snippet).lower()
+    return any(keyword.lower() in text for keyword in DELIVERY_KEYWORDS)
+
 def get_email_messages(service, max_results=100):
     try:
         results = service.users().messages().list(userId='me', maxResults=max_results).execute()
@@ -53,7 +68,7 @@ def get_email_messages(service, max_results=100):
             return []
             
         email_data = []
-        with st.spinner('Loading emails...'):
+        with st.spinner('Loading delivery-related emails...'):
             for message in messages:
                 msg = service.users().messages().get(userId='me', id=message['id']).execute()
                 headers = msg['payload']['headers']
@@ -61,27 +76,38 @@ def get_email_messages(service, max_results=100):
                 subject = next((header['value'] for header in headers if header['name'].lower() == 'subject'), 'No Subject')
                 sender = next((header['value'] for header in headers if header['name'].lower() == 'from'), 'Unknown Sender')
                 date_str = next((header['value'] for header in headers if header['name'].lower() == 'date'), '')
+                snippet = msg.get('snippet', 'No preview available')
                 
-                try:
-                    date_obj = datetime.strptime(date_str.split(' (')[0].strip(), '%a, %d %b %Y %H:%M:%S %z')
-                    formatted_date = date_obj.astimezone(pytz.UTC).strftime('%Y-%m-%d %H:%M:%S UTC')
-                except:
-                    formatted_date = date_str
-                    
-                email_data.append({
-                    'subject': subject,
-                    'sender': sender,
-                    'date': formatted_date,
-                    'snippet': msg.get('snippet', 'No preview available')
-                })
+                # Only process delivery-related emails
+                if is_delivery_related(subject, snippet):
+                    try:
+                        date_obj = datetime.strptime(date_str.split(' (')[0].strip(), '%a, %d %b %Y %H:%M:%S %z')
+                        formatted_date = date_obj.astimezone(pytz.UTC).strftime('%Y-%m-%d %H:%M:%S UTC')
+                    except:
+                        formatted_date = date_str
+                        
+                    email_data.append({
+                        'subject': subject,
+                        'sender': sender,
+                        'date': formatted_date,
+                        'snippet': snippet
+                    })
         return email_data
     except Exception as e:
         st.error(f"Error fetching emails: {str(e)}")
         return []
 
 def main():
-    st.set_page_config(page_title="Gmail Inbox Viewer", page_icon="📧", layout="wide")
-    st.title("📧 Gmail Inbox Viewer")
+    st.set_page_config(page_title="Delivery Email Tracker", page_icon="📦", layout="wide")
+    st.title("📦 Delivery Email Tracker")
+
+    # Auto-refresh settings
+    refresh_interval = st.sidebar.slider("Auto-refresh interval (seconds)", 30, 300, 60)
+    
+    # Check if it's time to refresh
+    if time.time() - st.session_state.last_refresh > refresh_interval:
+        st.session_state.last_refresh = time.time()
+        st.rerun()
 
     # Check for authorization code in URL
     auth_code = get_auth_code_from_url()
@@ -91,6 +117,7 @@ def main():
     st.sidebar.write(f"Auth Code Present: {bool(auth_code)}")
     st.sidebar.write(f"Auth in Progress: {st.session_state.auth_in_progress}")
     st.sidebar.write(f"Has Credentials: {bool(st.session_state.credentials)}")
+    st.sidebar.write(f"Last Refresh: {datetime.fromtimestamp(st.session_state.last_refresh).strftime('%H:%M:%S')}")
     
     # Handle authentication and authorization
     if st.session_state.credentials is None:
@@ -137,12 +164,12 @@ def main():
         if service:
             emails = get_email_messages(service)
             if emails:
-                st.subheader("Your Inbox")
+                st.subheader("Your Delivery-Related Emails")
                 
                 # Search and filter options
                 col1, col2 = st.columns([3, 1])
                 with col1:
-                    search_term = st.text_input("Search emails", "").lower()
+                    search_term = st.text_input("Search delivery emails", "").lower()
                 with col2:
                     sort_by = st.selectbox("Sort by", ["Date", "Sender", "Subject"])
                 
@@ -170,6 +197,8 @@ def main():
                         st.write(f"**Preview:**")
                         st.write(email['snippet'])
                         st.markdown("---")
+            else:
+                st.info("No delivery-related emails found in your recent messages.")
 
 if __name__ == "__main__":
     main()
