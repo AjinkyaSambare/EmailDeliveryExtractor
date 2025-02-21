@@ -12,20 +12,13 @@ import time
 from typing import Dict, Any, List
 
 # Initialize session states
-if 'credentials' not in st.session_state:
-    st.session_state.credentials = None
-if 'auth_in_progress' not in st.session_state:
-    st.session_state.auth_in_progress = False
-if 'last_refresh' not in st.session_state:
-    st.session_state.last_refresh = time.time()
-if 'auth_code' not in st.session_state:
-    st.session_state.auth_code = None
-if 'processed_emails' not in st.session_state:
-    st.session_state.processed_emails = []
-if 'total_emails' not in st.session_state:
-    st.session_state.total_emails = 0
-if 'current_progress' not in st.session_state:
-    st.session_state.current_progress = 0
+st.session_state.setdefault('credentials', None)
+st.session_state.setdefault('auth_in_progress', False)
+st.session_state.setdefault('last_refresh', time.time())
+st.session_state.setdefault('auth_code', None)
+st.session_state.setdefault('processed_emails', [])
+st.session_state.setdefault('total_emails', 0)
+st.session_state.setdefault('current_progress', 0)
 
 class AzureOpenAIChat:
     def __init__(self):
@@ -194,6 +187,135 @@ def create_table_if_not_exists():
     except Exception as e:
         st.error(f"Error creating table: {str(e)}")
 
+def get_email_messages(service, max_results=100):
+    """Fetch and process delivery-related emails with detailed progress tracking."""
+    try:
+        status_text = st.empty()
+        progress_bar = st.progress(0)
+        
+        status_text.text("📥 Fetching emails from Gmail...")
+        results = service.users().messages().list(userId='me', maxResults=max_results).execute()
+        messages = results.get('messages', [])
+        
+        if not messages:
+            status_text.info("No messages found in the inbox.")
+            return []
+            
+        email_data = []
+        chat_client = AzureOpenAIChat()
+        total_messages = len(messages)
+        
+        status_text.text(f"🔍 Found {total_messages} emails to analyze")
+        
+        for idx, message in enumerate(messages):
+            # Update progress
+            progress = int((idx + 1) * 100 / total_messages)
+            progress_bar.progress(progress)
+            
+            try:
+                msg = service.users().messages().get(userId='me', id=message['id']).execute()
+                headers = msg['payload']['headers']
+                
+                subject = next((header['value'] for header in headers if header['name'].lower() == 'subject'), 'No Subject')
+                sender = next((header['value'] for header in headers if header['name'].lower() == 'from'), 'Unknown Sender')
+                date_str = next((header['value'] for header in headers if header['name'].lower() == 'date'), '')
+                snippet = msg.get('snippet', 'No preview available')
+                
+                # Only process delivery-related emails
+                if is_delivery_related(subject, snippet):
+                    status_text.text(f"📦 Processing delivery email {idx + 1}/{total_messages}: {subject}")
+                    
+                    try:
+                        date_obj = datetime.strptime(date_str.split(' (')[0].strip(), '%a, %d %b %Y %H:%M:%S %z')
+                        formatted_date = date_obj.astimezone(pytz.UTC).strftime('%Y-%m-%d %H:%M:%S UTC')
+                    except:
+                        formatted_date = date_str
+                    
+                    # Extract full email body
+                    email_body = ""
+                    if 'parts' in msg['payload']:
+                        for part in msg['payload']['parts']:
+                            if part['mimeType'] == 'text/plain':
+                                body_data = part.get('body', {}).get('data', '')
+                                if body_data:
+                                    import base64
+                                    email_body = base64.urlsafe_b64decode(body_data).decode('utf-8')
+                    else:
+                        body_data = msg['payload'].get('body', {}).get('data', '')
+                        if body_data:
+                            email_body = base64.urlsafe_b64decode(body_data).decode('utf-8')
+                    
+                    # Process through GPT
+                    response = chat_client.extract_delivery_details(f"Subject: {subject}\n\nBody: {snippet}\n\n{email_body}")
+                    if response and "choices" in response:
+                        try:
+                            extracted_text = response["choices"][0]["message"]["content"]
+                            # Clean up the JSON string
+                            extracted_text = extracted_text.strip()
+                            if extracted_text.startswith("```json"):
+                                extracted_text = extracted_text[7:-3]  # Remove ```json and ``` markers
+                            
+                            parsed_json = json.loads(extracted_text)
+                            # Add email metadata
+                            parsed_json['email_id'] = message['id']
+                            parsed_json['subject'] = subject
+                            parsed_json['sender'] = sender
+                            parsed_json['date'] = formatted_date
+                            email_data.append(parsed_json)
+                            
+                            # Store in database
+                            insert_into_db(parsed_json, message['id'])
+                        except json.JSONDecodeError as e:
+                            st.warning(f"Failed to parse response for email: {subject}\nError: {str(e)}")
+                            continue
+            except Exception as e:
+                st.warning(f"Error processing email {subject}: {str(e)}")
+                continue
+        
+        status_text.text(f"✅ Completed processing {len(email_data)} delivery emails")
+        progress_bar.progress(100)
+        return email_data
+        
+    except Exception as e:
+        st.error(f"Error fetching emails: {str(e)}")
+        return []
+
+def insert_into_db(data: Dict[str, Any], email_id: str) -> bool:
+    """Insert extracted JSON data into database and return success status."""
+    try:
+        conn = get_connection()
+        if conn is None:
+            return False
+            
+        # Check if email already exists
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM delivery_details WHERE email_id = %s", (email_id,))
+        if cursor.fetchone()[0] > 0:
+            return True  # Skip if already processed
+            
+        cursor.execute("""
+            INSERT INTO delivery_details
+            (delivery, price_num, description, order_id, delivery_date, store, 
+             tracking_number, carrier, email_id)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """, (
+            data.get("delivery", "no"),
+            data.get("price_num", 0.0),
+            data.get("description", ""),
+            data.get("order_id", ""),
+            data.get("delivery_date", None),
+            data.get("store", ""),
+            data.get("tracking_number", ""),
+            data.get("carrier", ""),
+            email_id
+        ))
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        st.error(f"Error inserting data: {str(e)}")
+        return False
+
 def get_delivery_history() -> pd.DataFrame:
     """Fetch all delivery details from the database."""
     try:
@@ -219,62 +341,6 @@ def get_delivery_history() -> pd.DataFrame:
             'delivery_date', 'store', 'tracking_number', 'carrier', 'created_at',
             'email_id'
         ])
-
-def display_history_table(df: pd.DataFrame):
-    """Display historical delivery details in an interactive table."""
-    try:
-        st.markdown("### 📋 Delivery History")
-
-        if df is None or df.empty:
-            st.info("No previous delivery emails analyzed yet.")
-            return
-
-        # Format the DataFrame for display
-        display_df = df.copy()
-
-        # Format price as currency
-        display_df['price_num'] = display_df['price_num'].apply(lambda x: f"${x:.2f}")
-
-        # Format delivery date
-        display_df['delivery_date'] = pd.to_datetime(display_df['delivery_date']).dt.strftime('%B %d, %Y')
-
-        # Format created_at timestamp
-        display_df['created_at'] = pd.to_datetime(display_df['created_at']).dt.strftime('%Y-%m-%d %H:%M:%S')
-
-        # Create delivery status column with emojis
-        display_df['status'] = display_df['delivery'].apply(
-            lambda x: "✅" if x == "yes" else "❌"
-        )
-
-        # Reorder and rename columns for display
-        columns_to_display = {
-            'created_at': 'Analyzed On',
-            'status': 'Status',
-            'store': 'Store',
-            'description': 'Description',
-            'price_num': 'Price',
-            'delivery_date': 'Delivery Date',
-            'tracking_number': 'Tracking Number',
-            'carrier': 'Carrier'
-        }
-
-        display_df = display_df[columns_to_display.keys()].rename(columns=columns_to_display)
-
-        # Display the interactive table
-        st.dataframe(
-            display_df,
-            hide_index=True,
-            column_config={
-                "Status": st.column_config.Column(width="small"),
-                "Store": st.column_config.Column(width="medium"),
-                "Description": st.column_config.Column(width="large"),
-                "Price": st.column_config.Column(width="small"),
-                "Analyzed On": st.column_config.Column(width="medium"),
-            }
-        )
-
-    except Exception as e:
-        st.error(f"Error displaying history table: {str(e)}")
 
 def display_delivery_details(data: Dict[str, Any]):
     """Display delivery details in a formatted table."""
@@ -342,6 +408,62 @@ def display_delivery_details(data: Dict[str, Any]):
     except Exception as e:
         st.error(f"Error displaying delivery details: {str(e)}")
 
+def display_history_table(df: pd.DataFrame):
+    """Display historical delivery details in an interactive table."""
+    try:
+        st.markdown("### 📋 Delivery History")
+
+        if df is None or df.empty:
+            st.info("No previous delivery emails analyzed yet.")
+            return
+
+        # Format the DataFrame for display
+        display_df = df.copy()
+
+        # Format price as currency
+        display_df['price_num'] = display_df['price_num'].apply(lambda x: f"${x:.2f}")
+
+        # Format delivery date
+        display_df['delivery_date'] = pd.to_datetime(display_df['delivery_date']).dt.strftime('%B %d, %Y')
+
+        # Format created_at timestamp
+        display_df['created_at'] = pd.to_datetime(display_df['created_at']).dt.strftime('%Y-%m-%d %H:%M:%S')
+
+        # Create delivery status column with emojis
+        display_df['status'] = display_df['delivery'].apply(
+            lambda x: "✅" if x == "yes" else "❌"
+        )
+
+        # Reorder and rename columns for display
+        columns_to_display = {
+            'created_at': 'Analyzed On',
+            'status': 'Status',
+            'store': 'Store',
+            'description': 'Description',
+            'price_num': 'Price',
+            'delivery_date': 'Delivery Date',
+            'tracking_number': 'Tracking Number',
+            'carrier': 'Carrier'
+        }
+
+        display_df = display_df[columns_to_display.keys()].rename(columns=columns_to_display)
+
+        # Display the interactive table
+        st.dataframe(
+            display_df,
+            hide_index=True,
+            column_config={
+                "Status": st.column_config.Column(width="small"),
+                "Store": st.column_config.Column(width="medium"),
+                "Description": st.column_config.Column(width="large"),
+                "Price": st.column_config.Column(width="small"),
+                "Analyzed On": st.column_config.Column(width="medium"),
+            }
+        )
+
+    except Exception as e:
+        st.error(f"Error displaying history table: {str(e)}")
+
 def main():
     st.set_page_config(page_title="Delivery Email Analyzer", page_icon="📦", layout="wide")
     st.title("📦 Delivery Email Analyzer")
@@ -356,7 +478,7 @@ def main():
         
         if st.session_state.credentials:
             if st.button("🚪 Logout", key="logout"):
-                for key in st.session_state.keys():
+                for key in list(st.session_state.keys()):
                     del st.session_state[key]
                 st.rerun()
 
@@ -404,53 +526,30 @@ def main():
         # Process emails
         service = create_gmail_service(st.session_state.credentials)
         if service:
-            # Progress indicators
-            progress_container = st.empty()
-            status_container = st.empty()
-            results_container = st.empty()
-            
-            with progress_container.container():
-                st.markdown("### 📥 Fetching Emails")
-                fetch_progress = st.progress(0)
-                process_progress = st.progress(0)
-            
-            with status_container:
-                status_text = st.empty()
-                
-            # Process emails with progress updates
-            status_text.text("📧 Fetching emails from Gmail...")
             processed_emails = get_email_messages(service)
             
-            # Update progress and display results
+            # Display results
             if processed_emails:
-                with results_container:
-                    st.success(f"✅ Successfully processed {len(processed_emails)} delivery-related emails")
-                    
-                    # Statistics
-                    st.markdown("### 📊 Processing Statistics")
-                    stat_col1, stat_col2, stat_col3 = st.columns(3)
-                    
-                    with stat_col1:
-                        st.metric("Total Emails Processed", len(processed_emails))
-                    with stat_col2:
-                        confirmed_deliveries = sum(1 for email in processed_emails if email.get('delivery') == 'yes')
-                        st.metric("Confirmed Deliveries", confirmed_deliveries)
-                    with stat_col3:
-                        total_value = sum(float(email.get('price_num', 0)) for email in processed_emails)
-                        st.metric("Total Value", f"${total_value:.2f}")
-                    
-                    # Display detailed results
-                    st.markdown("### 📦 Recent Deliveries")
-                    for email in processed_emails:
-                        with st.expander(f"📧 {email.get('description', 'Delivery Details')}"):
-                            display_delivery_details(email)
-            else:
-                with results_container:
-                    st.info("No new delivery-related emails found")
-            
-            # Clean up progress indicators
-            progress_container.empty()
-            status_container.empty()
+                st.success(f"✅ Successfully processed {len(processed_emails)} delivery-related emails")
+                
+                # Statistics
+                st.markdown("### 📊 Processing Statistics")
+                stat_col1, stat_col2, stat_col3 = st.columns(3)
+                
+                with stat_col1:
+                    st.metric("Total Emails Processed", len(processed_emails))
+                with stat_col2:
+                    confirmed_deliveries = sum(1 for email in processed_emails if email.get('delivery') == 'yes')
+                    st.metric("Confirmed Deliveries", confirmed_deliveries)
+                with stat_col3:
+                    total_value = sum(float(email.get('price_num', 0)) for email in processed_emails)
+                    st.metric("Total Value", f"${total_value:.2f}")
+                
+                # Display detailed results
+                st.markdown("### 📦 Recent Deliveries")
+                for email in processed_emails:
+                    with st.expander(f"📧 {email.get('description', 'Delivery Details')}"):
+                        display_delivery_details(email)
             
             # Display historical data
             st.markdown("---")
