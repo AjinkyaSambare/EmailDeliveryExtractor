@@ -18,6 +18,14 @@ if 'auth_in_progress' not in st.session_state:
     st.session_state.auth_in_progress = False
 if 'last_refresh' not in st.session_state:
     st.session_state.last_refresh = time.time()
+if 'auth_code' not in st.session_state:
+    st.session_state.auth_code = None
+if 'processed_emails' not in st.session_state:
+    st.session_state.processed_emails = []
+if 'total_emails' not in st.session_state:
+    st.session_state.total_emails = 0
+if 'current_progress' not in st.session_state:
+    st.session_state.current_progress = 0
 
 class AzureOpenAIChat:
     def __init__(self):
@@ -221,23 +229,31 @@ def insert_into_db(data: Dict[str, Any], email_id: str) -> bool:
         return False
 
 def get_email_messages(service, max_results=100):
-    """Fetch and process delivery-related emails."""
+    """Fetch and process delivery-related emails with detailed progress tracking."""
     try:
+        # Create status containers
+        fetch_status = st.empty()
+        fetch_progress = st.progress(0)
+        process_status = st.empty()
+        process_progress = st.progress(0)
+        
+        fetch_status.text("📥 Fetching emails from Gmail...")
         results = service.users().messages().list(userId='me', maxResults=max_results).execute()
         messages = results.get('messages', [])
         
         if not messages:
-            st.info("No messages found in the inbox.")
+            fetch_status.info("No messages found in the inbox.")
             return []
             
         email_data = []
         chat_client = AzureOpenAIChat()
+        total_messages = len(messages)
         
-        with st.spinner('Processing delivery-related emails...'):
-            progress_bar = st.progress(0)
-            processed_count = 0
+        fetch_status.text(f"🔍 Found {total_messages} emails to analyze")
+        processed_count = 0
+        delivery_count = 0
             
-            for message in messages:
+        for message in messages:
                 msg = service.users().messages().get(userId='me', id=message['id']).execute()
                 headers = msg['payload']['headers']
                 
@@ -281,7 +297,7 @@ def get_email_messages(service, max_results=100):
                 processed_count += 1
                 progress_bar.progress(processed_count / len(messages))
             
-            progress_bar.empty()
+                progress_bar.empty()
         return email_data
     except Exception as e:
         st.error(f"Error fetching emails: {str(e)}")
@@ -294,54 +310,118 @@ def main():
     # Create database table if it doesn't exist
     create_table_if_not_exists()
 
-    # Auto-refresh settings
-    refresh_interval = st.sidebar.slider("Auto-refresh interval (seconds)", 30, 300, 60)
-    
-    # Check if it's time to refresh
-    if time.time() - st.session_state.last_refresh > refresh_interval:
-        st.session_state.last_refresh = time.time()
-        st.rerun()
+    # Auto-refresh settings in sidebar
+    with st.sidebar:
+        st.header("⚙️ Settings")
+        refresh_interval = st.slider("Auto-refresh interval (seconds)", 30, 300, 60)
+        
+        if st.session_state.credentials:
+            if st.button("🚪 Logout", key="logout"):
+                for key in st.session_state.keys():
+                    del st.session_state[key]
+                st.rerun()
 
-    # Authentication and processing
-    if st.session_state.credentials is None:
-        st.write("Please login to access your Gmail inbox.")
-        if st.button("🔐 Login with Gmail"):
+    # Check for authorization code in URL
+    auth_code = get_auth_code_from_url()
+    if auth_code and not st.session_state.credentials:
+        with st.spinner("🔐 Completing authentication..."):
             try:
                 flow = Flow.from_client_config(
                     get_client_config(),
                     scopes=['https://www.googleapis.com/auth/gmail.readonly'],
                     redirect_uri=st.secrets["google_client_config"]["redirect_uris"][0]
                 )
-                auth_url, _ = flow.authorization_url(prompt='consent')
-                st.session_state.auth_in_progress = True
-                st.markdown(f"[Click here to authorize]({auth_url})")
+                flow.fetch_token(code=auth_code)
+                st.session_state.credentials = flow.credentials
+                st.session_state.auth_in_progress = False
+                st.rerun()
             except Exception as e:
-                st.error(f"Error initiating authentication: {str(e)}")
-    else:
-        # Logout button
-        if st.sidebar.button("🚪 Logout"):
-            st.session_state.credentials = None
-            st.rerun()
+                st.error(f"Authentication failed: {str(e)}")
+                st.session_state.auth_in_progress = False
+
+    # Main content area
+    if not st.session_state.credentials:
+        st.markdown("""
+        ### 🔐 Gmail Authentication Required
+        Please login to access your Gmail inbox and analyze delivery emails.
+        """)
         
+        auth_col1, auth_col2 = st.columns([1, 2])
+        with auth_col1:
+            if st.button("🔑 Login with Gmail", key="login", use_container_width=True):
+                try:
+                    flow = Flow.from_client_config(
+                        get_client_config(),
+                        scopes=['https://www.googleapis.com/auth/gmail.readonly'],
+                        redirect_uri=st.secrets["google_client_config"]["redirect_uris"][0]
+                    )
+                    auth_url, _ = flow.authorization_url(prompt='consent')
+                    st.session_state.auth_in_progress = True
+                    st.markdown(f"[Click here to authorize]({auth_url})")
+                except Exception as e:
+                    st.error(f"Error initiating authentication: {str(e)}")
+                    st.session_state.auth_in_progress = False
+    else:
         # Process emails
         service = create_gmail_service(st.session_state.credentials)
         if service:
+            # Progress indicators
+            progress_container = st.empty()
+            status_container = st.empty()
+            results_container = st.empty()
+            
+            with progress_container.container():
+                st.markdown("### 📥 Fetching Emails")
+                fetch_progress = st.progress(0)
+                process_progress = st.progress(0)
+            
+            with status_container:
+                status_text = st.empty()
+                
+            # Process emails with progress updates
+            status_text.text("📧 Fetching emails from Gmail...")
             processed_emails = get_email_messages(service)
             
-            # Display statistics and history
-            st.markdown("### 📊 Recent Processing Results")
+            # Update progress and display results
             if processed_emails:
-                st.success(f"Processed {len(processed_emails)} delivery-related emails")
-                
-                # Display detailed results
-                for email in processed_emails:
-                    with st.expander(f"📧 {email.get('description', 'Delivery Details')}"):
-                        display_delivery_details(email)
+                with results_container:
+                    st.success(f"✅ Successfully processed {len(processed_emails)} delivery-related emails")
+                    
+                    # Statistics
+                    st.markdown("### 📊 Processing Statistics")
+                    stat_col1, stat_col2, stat_col3 = st.columns(3)
+                    
+                    with stat_col1:
+                        st.metric("Total Emails Processed", len(processed_emails))
+                    with stat_col2:
+                        confirmed_deliveries = sum(1 for email in processed_emails if email.get('delivery') == 'yes')
+                        st.metric("Confirmed Deliveries", confirmed_deliveries)
+                    with stat_col3:
+                        total_value = sum(float(email.get('price_num', 0)) for email in processed_emails)
+                        st.metric("Total Value", f"${total_value:.2f}")
+                    
+                    # Display detailed results
+                    st.markdown("### 📦 Recent Deliveries")
+                    for email in processed_emails:
+                        with st.expander(f"📧 {email.get('description', 'Delivery Details')}"):
+                            display_delivery_details(email)
             else:
-                st.info("No new delivery-related emails found")
+                with results_container:
+                    st.info("No new delivery-related emails found")
+            
+            # Clean up progress indicators
+            progress_container.empty()
+            status_container.empty()
             
             # Display historical data
+            st.markdown("---")
             display_history_table(get_delivery_history())
+            
+    # Check if it's time to refresh
+    if time.time() - st.session_state.last_refresh > refresh_interval:
+        st.session_state.last_refresh = time.time()
+        time.sleep(2)  # Small delay to prevent too frequent refreshes
+        st.rerun()
 
 if __name__ == "__main__":
     main()
