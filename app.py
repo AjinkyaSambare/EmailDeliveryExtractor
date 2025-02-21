@@ -279,8 +279,7 @@ def get_email_messages(service, max_results=100):
     except Exception as e:
         st.error(f"Error fetching emails: {str(e)}")
         return []
-
-def insert_into_db(data: Dict[str, Any]) -> bool:
+def insert_into_db(data: Dict[str, Any], email_id: str = None) -> bool:
     """Insert extracted JSON data into database and return success status."""
     try:
         conn = get_connection()
@@ -289,9 +288,8 @@ def insert_into_db(data: Dict[str, Any]) -> bool:
         cursor = conn.cursor()
         cursor.execute("""
             INSERT INTO delivery_details
-            (delivery, price_num, description, order_id, delivery_date, store, 
-             tracking_number, carrier, email_id)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            (delivery, price_num, description, order_id, delivery_date, store, tracking_number, carrier)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
         """, (
             data.get("delivery", "no"),
             data.get("price_num", 0.0),
@@ -300,8 +298,7 @@ def insert_into_db(data: Dict[str, Any]) -> bool:
             data.get("delivery_date", None),
             data.get("store", ""),
             data.get("tracking_number", ""),
-            data.get("carrier", ""),
-            data.get("email_id", "")
+            data.get("carrier", "")
         ))
         conn.commit()
         conn.close()
