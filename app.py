@@ -43,7 +43,7 @@ def create_gmail_service(credentials):
         st.error(f"Error creating Gmail service: {str(e)}")
         return None
 
-def get_email_messages(service, max_results=50):
+def get_email_messages(service, max_results=100):
     try:
         results = service.users().messages().list(userId='me', maxResults=max_results).execute()
         messages = results.get('messages', [])
