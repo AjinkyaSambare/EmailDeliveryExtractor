@@ -54,9 +54,54 @@ def create_gmail_service(credentials):
         return None
 
 def is_delivery_related(subject, snippet):
-    """Check if the email is delivery-related based on keywords"""
+    """
+    Check if the email is delivery-related based on more precise keyword matching
+    Uses context-aware patterns to reduce false positives
+    """
     text = (subject + ' ' + snippet).lower()
-    return any(keyword.lower() in text for keyword in DELIVERY_KEYWORDS)
+    
+    # Common false positive words that should be excluded
+    exclusion_words = ['certificate', 'training', 'course', 'class', 'workshop', 'webinar']
+    
+    # If any exclusion word is present, check if it's actually not a delivery context
+    for word in exclusion_words:
+        if word in text:
+            return False
+            
+    # Check for delivery-specific word combinations
+    delivery_patterns = [
+        ('order', ['shipped', 'delivered', 'delivery', 'arriving', 'tracking']),
+        ('package', ['delivered', 'arrival', 'tracking', 'shipped']),
+        ('shipping', ['status', 'update', 'confirmation', 'tracking']),
+        ('delivery', ['scheduled', 'attempted', 'successful', 'status']),
+        ('tracking', ['number', 'status', 'update', 'information']),
+    ]
+    
+    # Check for courier service names
+    courier_services = ['fedex', 'ups', 'usps', 'dhl', 'amazon delivery']
+    if any(service in text for service in courier_services):
+        return True
+    
+    # Check for delivery-specific patterns
+    for main_word, related_words in delivery_patterns:
+        if main_word in text:
+            if any(related in text for related in related_words):
+                return True
+    
+    # Additional specific phrases that indicate delivery
+    specific_phrases = [
+        'out for delivery',
+        'will be delivered',
+        'has been delivered',
+        'delivery notification',
+        'shipment notification',
+        'delivery status',
+        'shipping confirmation',
+        'arriving',
+        'package arrival'
+    ]
+    
+    return any(phrase in text for phrase in specific_phrases)
 
 def get_email_messages(service, max_results=100):
     try:
