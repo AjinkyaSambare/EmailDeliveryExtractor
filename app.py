@@ -471,6 +471,45 @@ def display_history_table(df: pd.DataFrame):
 
     except Exception as e:
         st.error(f"Error displaying history table: {str(e)}")
+def get_processing_statistics():
+    """Fetch and calculate processing statistics from the database."""
+    try:
+        conn = get_connection()
+        if conn is None:
+            return {
+                "total_emails": 0,
+                "confirmed_deliveries": 0,
+                "total_value": 0.00
+            }
+        
+        cursor = conn.cursor()
+        
+        # Get total emails processed
+        cursor.execute("SELECT COUNT(*) FROM delivery_details")
+        total_emails = cursor.fetchone()[0]
+        
+        # Get confirmed deliveries
+        cursor.execute("SELECT COUNT(*) FROM delivery_details WHERE delivery = 'yes'")
+        confirmed_deliveries = cursor.fetchone()[0]
+        
+        # Get total value
+        cursor.execute("SELECT SUM(price_num) FROM delivery_details")
+        total_value = cursor.fetchone()[0] or 0.00
+        
+        conn.close()
+        
+        return {
+            "total_emails": total_emails,
+            "confirmed_deliveries": confirmed_deliveries,
+            "total_value": total_value
+        }
+    except Exception as e:
+        st.warning(f"Unable to fetch statistics: {str(e)}")
+        return {
+            "total_emails": 0,
+            "confirmed_deliveries": 0,
+            "total_value": 0.00
+        }
 
 def main():
     st.set_page_config(page_title="Delivery Email Analyzer", page_icon="📦", layout="wide")
@@ -542,17 +581,15 @@ def main():
                 
                 # Statistics
                 st.markdown("### 📊 Processing Statistics")
+                stats = get_processing_statistics()
                 stat_col1, stat_col2, stat_col3 = st.columns(3)
-                
+
                 with stat_col1:
-                    st.metric("Total Emails Processed", len(processed_emails))
+                    st.metric("Total Emails Processed", stats["total_emails"])
                 with stat_col2:
-                    confirmed_deliveries = sum(1 for email in processed_emails if email.get('delivery') == 'yes')
-                    st.metric("Confirmed Deliveries", confirmed_deliveries)
+                    st.metric("Confirmed Deliveries", stats["confirmed_deliveries"])
                 with stat_col3:
-                    total_value = sum(float(email.get('price_num', 0)) for email in processed_emails)
-                    st.metric("Total Value", f"${total_value:.2f}")
-                
+                    st.metric("Total Value", f"${stats['total_value']:.2f}")
                 # Display detailed results
                 st.markdown("### 📦 Recent Deliveries")
                 for email in processed_emails:
