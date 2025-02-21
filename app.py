@@ -593,9 +593,9 @@ def main():
                 # Display detailed results
                 st.markdown("### 📦 Recent Deliveries")
                 for email in processed_emails:
-                    with st.expander(f"📧 {email.get('description', 'Delivery Details')}"):
+                    expander_title = f"📧 {email.get('subject', '')} - From: {email.get('sender', '')}"
+                    with st.expander(expander_title):
                         display_delivery_details(email)
-            
             # Display historical data
             st.markdown("---")
             display_history_table(get_delivery_history())
