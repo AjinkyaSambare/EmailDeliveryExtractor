@@ -280,19 +280,13 @@ def get_email_messages(service, max_results=100):
         st.error(f"Error fetching emails: {str(e)}")
         return []
 
-def insert_into_db(data: Dict[str, Any], email_id: str) -> bool:
+def insert_into_db(data: Dict[str, Any]) -> bool:
     """Insert extracted JSON data into database and return success status."""
     try:
         conn = get_connection()
         if conn is None:
             return False
-            
-        # Check if email already exists
         cursor = conn.cursor()
-        cursor.execute("SELECT COUNT(*) FROM delivery_details WHERE email_id = %s", (email_id,))
-        if cursor.fetchone()[0] > 0:
-            return True  # Skip if already processed
-            
         cursor.execute("""
             INSERT INTO delivery_details
             (delivery, price_num, description, order_id, delivery_date, store, 
@@ -307,7 +301,7 @@ def insert_into_db(data: Dict[str, Any], email_id: str) -> bool:
             data.get("store", ""),
             data.get("tracking_number", ""),
             data.get("carrier", ""),
-            email_id
+            data.get("email_id", "")
         ))
         conn.commit()
         conn.close()
@@ -317,20 +311,38 @@ def insert_into_db(data: Dict[str, Any], email_id: str) -> bool:
         return False
 
 def get_delivery_history() -> pd.DataFrame:
-    """Fetch all delivery details from the database."""
+    """Fetch all delivery details from the database with error handling."""
     try:
         conn = get_connection()
         if conn is None:
             return pd.DataFrame()
-        
+        cursor = conn.cursor()
+
+        # First check if the table exists
+        cursor.execute("""
+            IF EXISTS (SELECT * FROM sysobjects WHERE name='delivery_details' AND xtype='U')
+            BEGIN
+                SELECT 1
+            END
+            ELSE
+            BEGIN
+                SELECT 0
+            END
+        """)
+        table_exists = cursor.fetchone()[0]
+
+        if not table_exists:
+            return pd.DataFrame(columns=[
+                'id', 'delivery', 'price_num', 'description', 'order_id',
+                'delivery_date', 'store', 'tracking_number', 'carrier', 'created_at'
+            ])
+
         query = """
-            SELECT TOP 100 id, delivery, price_num, description, order_id,
-                   delivery_date, store, tracking_number, carrier, created_at,
-                   email_id
+            SELECT id, delivery, price_num, description, order_id, delivery_date,
+                   store, tracking_number, carrier, created_at
             FROM delivery_details
             ORDER BY created_at DESC
         """
-        
         df = pd.read_sql(query, conn)
         conn.close()
         return df
@@ -338,8 +350,7 @@ def get_delivery_history() -> pd.DataFrame:
         st.warning(f"Unable to fetch delivery history: {str(e)}")
         return pd.DataFrame(columns=[
             'id', 'delivery', 'price_num', 'description', 'order_id',
-            'delivery_date', 'store', 'tracking_number', 'carrier', 'created_at',
-            'email_id'
+            'delivery_date', 'store', 'tracking_number', 'carrier', 'created_at'
         ])
 
 def display_delivery_details(data: Dict[str, Any]):
