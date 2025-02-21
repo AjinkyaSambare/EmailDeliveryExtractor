@@ -14,7 +14,6 @@ from typing import Dict, Any, List
 # Initialize session states
 st.session_state.setdefault('credentials', None)
 st.session_state.setdefault('auth_in_progress', False)
-st.session_state.setdefault('last_refresh', time.time())
 st.session_state.setdefault('auth_code', None)
 st.session_state.setdefault('processed_emails', [])
 st.session_state.setdefault('total_emails', 0)
@@ -517,8 +516,6 @@ def main():
 
     # Create database table if it doesn't exist
     create_table_if_not_exists()
-
-
     # Check for authorization code in URL
     auth_code = get_auth_code_from_url()
     if auth_code and not st.session_state.credentials:
@@ -589,12 +586,20 @@ def main():
             # Display historical data
             st.markdown("---")
             display_history_table(get_delivery_history())
-            
-    # Check if it's time to refresh
-    if time.time() - st.session_state.last_refresh > refresh_interval:
-        st.session_state.last_refresh = time.time()
-        time.sleep(2)  # Small delay to prevent too frequent refreshes
-        st.rerun()
+            st.markdown("---")
+            col1, col2, col3 = st.columns([1, 1, 1])
+            with col2:
+                button_col1, button_col2 = st.columns(2)
+                with button_col1:
+                    if st.button("🔄 Refresh", use_container_width=True):
+                        st.rerun()
+                with button_col2:
+                    if st.button("🚪 Logout", key="logout_bottom", use_container_width=True):
+                        for key in list(st.session_state.keys()):
+                            del st.session_state[key]
+                        st.rerun()
+
+    
 
 if __name__ == "__main__":
     main()
