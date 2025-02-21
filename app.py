@@ -518,16 +518,6 @@ def main():
     # Create database table if it doesn't exist
     create_table_if_not_exists()
 
-    # Auto-refresh settings in sidebar
-    with st.sidebar:
-        st.header("⚙️ Settings")
-        refresh_interval = st.slider("Auto-refresh interval (seconds)", 30, 300, 60)
-        
-        if st.session_state.credentials:
-            if st.button("🚪 Logout", key="logout"):
-                for key in list(st.session_state.keys()):
-                    del st.session_state[key]
-                st.rerun()
 
     # Check for authorization code in URL
     auth_code = get_auth_code_from_url()
