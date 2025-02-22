@@ -1,7 +1,8 @@
 import streamlit as st
 import pymssql
 import pandas as pd
-from typing import Dict, Any
+from typing import Dict, Any, List, Tuple
+from datetime import datetime
 
 def get_connection():
     """Create and return a database connection with error handling."""
@@ -66,6 +67,15 @@ def insert_into_db(data: Dict[str, Any], email_id: str = None) -> bool:
         if conn is None:
             return False
         cursor = conn.cursor()
+        
+        # Convert delivery_date to proper format if exists
+        delivery_date = None
+        if data.get("delivery_date"):
+            try:
+                delivery_date = datetime.strptime(data["delivery_date"], '%Y-%m-%d').date()
+            except:
+                pass
+
         # Construct SQL dynamically based on whether email_id is provided
         if email_id:
             cursor.execute("""
@@ -77,7 +87,7 @@ def insert_into_db(data: Dict[str, Any], email_id: str = None) -> bool:
                 data.get("price_num", 0.0),
                 data.get("description", ""),
                 data.get("order_id", ""),
-                data.get("delivery_date", None),
+                delivery_date,
                 data.get("store", ""),
                 data.get("tracking_number", ""),
                 data.get("carrier", ""),
@@ -93,7 +103,7 @@ def insert_into_db(data: Dict[str, Any], email_id: str = None) -> bool:
                 data.get("price_num", 0.0),
                 data.get("description", ""),
                 data.get("order_id", ""),
-                data.get("delivery_date", None),
+                delivery_date,
                 data.get("store", ""),
                 data.get("tracking_number", ""),
                 data.get("carrier", "")
@@ -117,28 +127,25 @@ def get_delivery_history() -> pd.DataFrame:
         cursor.execute("""
             IF EXISTS (SELECT * FROM sysobjects WHERE name='delivery_details' AND xtype='U')
             BEGIN
-                SELECT 1
-            END
-            ELSE
-            BEGIN
-                SELECT 0
+                SELECT id, delivery, price_num, description, order_id, delivery_date,
+                       store, tracking_number, carrier, created_at
+                FROM delivery_details
+                ORDER BY created_at DESC
             END
         """)
-        table_exists = cursor.fetchone()[0]
-
-        if not table_exists:
+        
+        # Fetch all results and create DataFrame
+        results = cursor.fetchall()
+        if not results:
             return pd.DataFrame(columns=[
                 'id', 'delivery', 'price_num', 'description', 'order_id',
                 'delivery_date', 'store', 'tracking_number', 'carrier', 'created_at'
             ])
-
-        query = """
-            SELECT id, delivery, price_num, description, order_id, delivery_date,
-                   store, tracking_number, carrier, created_at
-            FROM delivery_details
-            ORDER BY created_at DESC
-        """
-        df = pd.read_sql(query, conn)
+            
+        # Get column names from cursor description
+        columns = [col[0] for col in cursor.description]
+        df = pd.DataFrame(results, columns=columns)
+        
         conn.close()
         return df
     except Exception as e:
@@ -147,7 +154,7 @@ def get_delivery_history() -> pd.DataFrame:
             'id', 'delivery', 'price_num', 'description', 'order_id',
             'delivery_date', 'store', 'tracking_number', 'carrier', 'created_at'
         ])
-    
+
 def clear_all_records():
     """Clear all records from the delivery_details table."""
     try:
@@ -177,7 +184,7 @@ def display_history_table(df: pd.DataFrame):
         display_df = df.copy()
 
         # Format price as currency
-        display_df['price_num'] = display_df['price_num'].apply(lambda x: f"${x:.2f}")
+        display_df['price_num'] = display_df['price_num'].apply(lambda x: f"${x:.2f}" if pd.notnull(x) else "$0.00")
 
         # Format delivery date
         display_df['delivery_date'] = pd.to_datetime(display_df['delivery_date']).dt.strftime('%B %d, %Y')
