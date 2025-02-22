@@ -23,21 +23,36 @@ def create_table_if_not_exists():
         if conn is None:
             return
         cursor = conn.cursor()
+        
+        # First check if table exists
         cursor.execute("""
             IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='delivery_details' AND xtype='U')
-            CREATE TABLE delivery_details (
-                id INT IDENTITY(1,1) PRIMARY KEY,
-                delivery NVARCHAR(10),
-                price_num FLOAT,
-                description NVARCHAR(255),
-                order_id NVARCHAR(50),
-                delivery_date DATE,
-                store NVARCHAR(255),
-                tracking_number NVARCHAR(100),
-                carrier NVARCHAR(50),
-                created_at DATETIME DEFAULT GETDATE(),
-                email_id NVARCHAR(100)
-            )
+            BEGIN
+                CREATE TABLE delivery_details (
+                    id INT IDENTITY(1,1) PRIMARY KEY,
+                    delivery NVARCHAR(10),
+                    price_num FLOAT,
+                    description NVARCHAR(255),
+                    order_id NVARCHAR(50),
+                    delivery_date DATE,
+                    store NVARCHAR(255),
+                    tracking_number NVARCHAR(100),
+                    carrier NVARCHAR(50),
+                    created_at DATETIME DEFAULT GETDATE(),
+                    email_id NVARCHAR(100)
+                )
+            END
+            ELSE
+            BEGIN
+                -- Check if email_id column exists
+                IF NOT EXISTS (SELECT * FROM sys.columns 
+                             WHERE object_id = OBJECT_ID('delivery_details') 
+                             AND name = 'email_id')
+                BEGIN
+                    ALTER TABLE delivery_details
+                    ADD email_id NVARCHAR(100)
+                END
+            END
         """)
         conn.commit()
         conn.close()
@@ -51,21 +66,38 @@ def insert_into_db(data: Dict[str, Any], email_id: str = None) -> bool:
         if conn is None:
             return False
         cursor = conn.cursor()
-        cursor.execute("""
-            INSERT INTO delivery_details
-            (delivery, price_num, description, order_id, delivery_date, store, tracking_number, carrier, email_id)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-        """, (
-            data.get("delivery", "no"),
-            data.get("price_num", 0.0),
-            data.get("description", ""),
-            data.get("order_id", ""),
-            data.get("delivery_date", None),
-            data.get("store", ""),
-            data.get("tracking_number", ""),
-            data.get("carrier", ""),
-            email_id
-        ))
+        # Construct SQL dynamically based on whether email_id is provided
+        if email_id:
+            cursor.execute("""
+                INSERT INTO delivery_details
+                (delivery, price_num, description, order_id, delivery_date, store, tracking_number, carrier, email_id)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """, (
+                data.get("delivery", "no"),
+                data.get("price_num", 0.0),
+                data.get("description", ""),
+                data.get("order_id", ""),
+                data.get("delivery_date", None),
+                data.get("store", ""),
+                data.get("tracking_number", ""),
+                data.get("carrier", ""),
+                email_id
+            ))
+        else:
+            cursor.execute("""
+                INSERT INTO delivery_details
+                (delivery, price_num, description, order_id, delivery_date, store, tracking_number, carrier)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            """, (
+                data.get("delivery", "no"),
+                data.get("price_num", 0.0),
+                data.get("description", ""),
+                data.get("order_id", ""),
+                data.get("delivery_date", None),
+                data.get("store", ""),
+                data.get("tracking_number", ""),
+                data.get("carrier", "")
+            ))
         conn.commit()
         conn.close()
         return True
