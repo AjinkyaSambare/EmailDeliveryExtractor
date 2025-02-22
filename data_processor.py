@@ -2,11 +2,10 @@ import streamlit as st
 import requests
 import json
 import base64
-import re
 from datetime import datetime
 import pytz
 import pandas as pd
-from typing import Dict, Any, List, Set, Optional, Tuple
+from typing import Dict, Any, List, Set, Optional
 from database import insert_into_db, get_connection
 from time import sleep
 
@@ -15,15 +14,81 @@ BATCH_SIZE = 10
 MAX_RETRIES = 3
 RATE_LIMIT_DELAY = 1
 
+def display_delivery_details(data: Dict[str, Any]):
+    """Display delivery details in a formatted table."""
+    try:
+        col1, col2 = st.columns(2)
+
+        with col1:
+            status_color = "success" if data.get("delivery") == "yes" else "error"
+            st.markdown(
+                f"""
+                <div style='background-color: {'#28a745' if status_color == 'success' else '#dc3545'};
+                          padding: 10px;
+                          border-radius: 5px;
+                          color: white;
+                          display: inline-block;
+                          margin-bottom: 10px;'>
+                    {'✓ Delivery Confirmed' if data.get("delivery") == "yes" else '⚠ Delivery Not Confirmed'}
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+
+        with col2:
+            if data.get("price_num", 0) > 0:
+                st.markdown(f"### 💰 ${data['price_num']:.2f}")
+
+        details_dict = {
+            "Field": [
+                "Subject",
+                "Sender",
+                "Date",
+                "Order ID",
+                "Description",
+                "Store",
+                "Delivery Date",
+                "Carrier",
+                "Tracking Number"
+            ],
+            "Value": [
+                data.get("subject", ""),
+                data.get("sender", ""),
+                data.get("date", ""),
+                data.get("order_id", ""),
+                data.get("description", ""),
+                data.get("store", ""),
+                data.get("delivery_date", ""),
+                data.get("carrier", ""),
+                data.get("tracking_number", "")
+            ]
+        }
+
+        df = pd.DataFrame(details_dict)
+        st.dataframe(
+            df,
+            hide_index=True,
+            column_config={
+                "Field": st.column_config.Column(width="medium"),
+                "Value": st.column_config.Column(width="large")
+            }
+        )
+
+        if data.get("tracking_number") and data.get("carrier"):
+            st.info(f"💡 You can track your package using the tracking number: {data['tracking_number']}")
+
+    except Exception as e:
+        st.error(f"Error displaying delivery details: {str(e)}")
+
 class EmailProcessor:
     def __init__(self):
         self.chat_client = AzureOpenAIChat()
-        self.processed_fingerprints = set()
+        self.processed_ids = set()
         self.status_text = st.empty()
         self.progress_bar = st.progress(0)
 
-    def _get_processed_fingerprints(self) -> Set[str]:
-        """Fetch unique fingerprints of previously processed emails."""
+    def _get_processed_ids(self) -> Set[str]:
+        """Fetch IDs of previously processed emails."""
         try:
             conn = get_connection()
             if conn is None:
@@ -31,53 +96,17 @@ class EmailProcessor:
             
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT 
-                    email_id,
-                    COALESCE(order_id, ''),
-                    COALESCE(tracking_number, '')
+                SELECT email_id 
                 FROM delivery_details 
                 WHERE email_id IS NOT NULL
             """)
             
-            fingerprints = {f"{row[0]}_{row[1]}_{row[2]}" for row in cursor.fetchall()}
+            processed_ids = {row[0] for row in cursor.fetchall()}
             conn.close()
-            return fingerprints
+            return processed_ids
         except Exception as e:
-            st.error(f"Error fetching processed fingerprints: {str(e)}")
+            st.error(f"Error fetching processed email IDs: {str(e)}")
             return set()
-
-    def _extract_identifiers(self, msg: Dict) -> Tuple[str, str]:
-        """Extract order ID and tracking number from email."""
-        body = self._extract_email_body(msg)
-        headers = msg['payload']['headers']
-        subject = next((h['value'] for h in headers if h['name'].lower() == 'subject'), '')
-        text = f"{subject}\n{body}"
-
-        # Order ID patterns
-        order_patterns = [
-            r'order\s*#?\s*(\w{5,})',
-            r'order\s*id\s*:\s*(\w{5,})',
-            r'order\s*number\s*:\s*(\w{5,})',
-            r'#\s*(\w{5,})',
-            r'confirmation\s*#\s*(\w{5,})'
-        ]
-
-        # Tracking number patterns
-        tracking_patterns = [
-            r'tracking\s*#?\s*(\w{12,})',
-            r'tracking\s*number\s*:\s*(\w{12,})',
-            r'(\b1Z[A-Z0-9]{16}\b)',  # UPS
-            r'(\b\d{12,14}\b)',       # FedEx
-            r'(\b\d{20,22}\b)',       # USPS
-            r'(\b\d{10,12}\b)',       # DHL
-        ]
-
-        order_id = next((m.group(1) for p in order_patterns 
-                        if (m := re.search(p, text, re.I))), '')
-        tracking_number = next((m.group(1) for p in tracking_patterns 
-                              if (m := re.search(p, text, re.I))), '')
-
-        return order_id, tracking_number
 
     def _extract_email_body(self, msg: Dict) -> str:
         """Extract email body from message payload."""
@@ -175,7 +204,7 @@ class EmailProcessor:
         """Main function to process emails in batches."""
         try:
             # Initialize
-            self.processed_fingerprints = self._get_processed_fingerprints()
+            self.processed_ids = self._get_processed_ids()
             self.status_text.text("📥 Fetching emails from Gmail...")
             
             # Get emails
@@ -208,6 +237,9 @@ class EmailProcessor:
         
         for idx, message in enumerate(messages):
             try:
+                if message['id'] in self.processed_ids:
+                    continue
+                    
                 msg = service.users().messages().get(userId='me', id=message['id']).execute()
                 headers = msg['payload']['headers']
                 
@@ -217,21 +249,17 @@ class EmailProcessor:
                 date = next((h['value'] for h in headers if h['name'].lower() == 'date'), '')
                 snippet = msg.get('snippet', '')
 
-                # Check if delivery-related and not processed
+                # Check if delivery-related
                 if self._is_delivery_related(subject, snippet):
-                    order_id, tracking_number = self._extract_identifiers(msg)
-                    fingerprint = f"{message['id']}_{order_id}_{tracking_number}"
-                    
-                    if fingerprint not in self.processed_fingerprints:
-                        delivery_emails.append({
-                            'id': message['id'],
-                            'subject': subject,
-                            'sender': sender,
-                            'date': date,
-                            'body': self._extract_email_body(msg),
-                            'snippet': snippet
-                        })
-                        self.status_text.text(f"📦 Found delivery email: {subject}")
+                    delivery_emails.append({
+                        'id': message['id'],
+                        'subject': subject,
+                        'sender': sender,
+                        'date': date,
+                        'body': self._extract_email_body(msg),
+                        'snippet': snippet
+                    })
+                    self.status_text.text(f"📦 Found delivery email: {subject}")
 
             except Exception as e:
                 st.warning(f"Error filtering email {message['id']}: {str(e)}")
