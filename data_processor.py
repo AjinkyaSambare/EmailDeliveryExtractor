@@ -324,6 +324,7 @@ class EmailProcessor:
         self.status_text.text(f"✅ Processed {len(processed_results)} emails")
         self.progress_bar.progress(1.0)
         return processed_results
+    
 
 class AzureOpenAIChat:
     def __init__(self):

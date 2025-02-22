@@ -15,7 +15,21 @@ def get_connection():
     except Exception as e:
         st.error(f"Database connection error: {str(e)}")
         return None
-
+def clear_all_records():
+        """Clear all records from the delivery_details table."""
+        try:
+            conn = get_connection()
+            if conn is None:
+                return False
+            
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM delivery_details")
+            conn.commit()
+            conn.close()
+            return True
+        except Exception as e:
+            st.error(f"Error clearing records: {str(e)}")
+            return False
 def create_table_if_not_exists():
     """Create the delivery_details table if it doesn't exist."""
     try:

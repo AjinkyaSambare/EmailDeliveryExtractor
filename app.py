@@ -1,3 +1,4 @@
+from time import sleep
 import streamlit as st
 from auth_handler import get_auth_code_from_url, create_gmail_service, get_client_config
 from google_auth_oauthlib.flow import Flow
@@ -6,7 +7,8 @@ from database import (
     create_table_if_not_exists, 
     get_delivery_history, 
     display_history_table,
-    get_processing_statistics
+    get_processing_statistics,
+    clear_all_records
 )
 
 def main():
@@ -92,7 +94,7 @@ def main():
             
             col1, col2, col3 = st.columns([1, 1, 1])
             with col2:
-                button_col1, button_col2 = st.columns(2)
+                button_col1, button_col2, button_col3 = st.columns(3)
                 with button_col1:
                     if st.button("🔄 Refresh", use_container_width=True):
                         st.rerun()
@@ -101,6 +103,15 @@ def main():
                         for key in list(st.session_state.keys()):
                             del st.session_state[key]
                         st.rerun()
+                with button_col3:
+                    if st.button("🗑️ Clear All", type="secondary", use_container_width=True):
+                        if clear_all_records():
+                            st.success("All records cleared successfully!")
+                            sleep(1)  # Give user time to see the message
+                            st.rerun()
+                        else:
+                            st.error("Failed to clear records")
+
 
 if __name__ == "__main__":
     # Initialize session states
