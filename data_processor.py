@@ -130,34 +130,70 @@ class EmailProcessor:
         """Check if email is delivery-related."""
         text = f"{subject} {snippet}".lower()
         
-        # Exclude non-delivery emails
-        if any(word in text for word in ['certificate', 'training', 'course', 'workshop']):
-            return False
-
-        # Delivery-related patterns
-        delivery_patterns = {
-            'order': ['shipped', 'delivered', 'delivery', 'arriving', 'tracking'],
-            'package': ['delivered', 'arrival', 'tracking', 'shipped'],
-            'shipping': ['status', 'update', 'confirmation', 'tracking'],
-            'delivery': ['scheduled', 'attempted', 'successful', 'status'],
-            'tracking': ['number', 'status', 'update', 'information']
-        }
-
-        # Check courier services
-        if any(service in text for service in ['fedex', 'ups', 'usps', 'dhl', 'amazon delivery']):
+        # First check for order confirmation patterns - these are always delivery related
+        order_confirmation_patterns = [
+            'order confirmation',
+            'order #',
+            'order number',
+            'order placed',
+            'order details',
+            'estimated delivery',
+            'delivery date',
+            'order has been',
+            'your order',
+            'shipping details'
+        ]
+        
+        if any(pattern in text.lower() for pattern in order_confirmation_patterns):
+            return True
+            
+        # Then check for common shopping platforms
+        shopping_platforms = [
+            'amazon',
+            'walmart',
+            'ebay',
+            'bestbuy',
+            'target',
+            'shopify',
+            'etsy',
+            'newegg'
+        ]
+        
+        if any(platform in text.lower() for platform in shopping_platforms):
             return True
 
-        # Check delivery patterns
-        for main_word, related_words in delivery_patterns.items():
-            if main_word in text and any(word in text for word in related_words):
-                return True
-
-        # Check specific phrases
-        specific_phrases = [
-            'out for delivery', 'will be delivered', 'has been delivered',
-            'delivery notification', 'shipment notification', 'arriving'
+        # Check for delivery services
+        delivery_services = [
+            'fedex',
+            'ups',
+            'usps',
+            'dhl',
+            'ontrac',
+            'lasership',
+            'amazon delivery',
+            'express delivery',
+            'priority mail',
+            'tracking number'
         ]
-        return any(phrase in text for phrase in specific_phrases)
+        
+        if any(service in text.lower() for service in delivery_services):
+            return True
+
+        # Finally check for general delivery-related terms
+        delivery_keywords = [
+            'shipped',
+            'delivered',
+            'arriving',
+            'package',
+            'delivery status',
+            'shipment',
+            'shipping confirmation',
+            'tracking info',
+            'out for delivery',
+            'expected delivery'
+        ]
+        
+        return any(keyword in text.lower() for keyword in delivery_keywords)
 
     def _process_email_batch(self, emails: List[Dict]) -> List[Dict]:
         """Process a batch of emails using Azure OpenAI."""
