@@ -1,8 +1,13 @@
 import streamlit as st
 from auth_handler import get_auth_code_from_url, create_gmail_service, get_client_config
 from google_auth_oauthlib.flow import Flow
-from data_processor import get_email_messages, get_processing_statistics, display_delivery_details
-from database import create_table_if_not_exists, get_delivery_history, display_history_table
+from data_processor import get_email_messages, display_delivery_details
+from database import (
+    create_table_if_not_exists, 
+    get_delivery_history, 
+    display_history_table,
+    get_processing_statistics
+)
 
 def main():
     st.set_page_config(page_title="Delivery Email Analyzer", page_icon="📦", layout="wide")
