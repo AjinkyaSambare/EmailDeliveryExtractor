@@ -367,14 +367,23 @@ def create_emails_over_time_chart(data):
     return chart
 
 def create_carrier_chart(data):
-    """Create a bar chart for carrier distribution with controlled width"""
+    """Create a bar chart for carrier distribution with horizontal labels and taller bars"""
     colors = ['#9C27B0', '#40c4ff', '#FF5252', '#FFC107']
     
-    chart = alt.Chart(data).mark_bar().encode(
+    chart = alt.Chart(data).mark_bar(
+        cornerRadiusTopLeft=3,
+        cornerRadiusTopRight=3,
+        size=40  # Increase the width of the bars
+    ).encode(
         x=alt.X('carrier:N', 
                 title='Carrier', 
                 sort='-y',
-                axis=alt.Axis(labelColor='#aaaaaa', titleColor='#aaaaaa')),
+                axis=alt.Axis(
+                    labelColor='#aaaaaa', 
+                    titleColor='#aaaaaa',
+                    labelAngle=0,  # Make labels horizontal
+                    labelPadding=10
+                )),
         y=alt.Y('count:Q', 
                 title='Number of Packages',
                 axis=alt.Axis(labelColor='#aaaaaa', titleColor='#aaaaaa')),
@@ -383,8 +392,8 @@ def create_carrier_chart(data):
                        legend=None),
         tooltip=['carrier:N', 'count:Q']
     ).properties(
-        height=250,
-        width=500,  # Control the width here
+        height=300,  # Increase chart height
+        width=500,   # Control the width
         background='#1e1e1e'
     ).configure_view(
         strokeWidth=0
@@ -394,7 +403,6 @@ def create_carrier_chart(data):
         domainColor='#444444'
     )
     
-    # Add padding around the chart
     return chart
 
 def create_status_chart(data):
@@ -468,6 +476,21 @@ def main():
     
     # Create database table if it doesn't exist
     create_table_if_not_exists()
+    
+    # First-time initialization for logged-in users
+    if st.session_state.credentials and not st.session_state.get('initialized', False):
+        try:
+            service = create_gmail_service(st.session_state.credentials)
+            if service:
+                # Process emails
+                with st.spinner("Loading your delivery data..."):
+                    processed_emails = get_email_messages(service, st.session_state.get('user_email'))
+                    if processed_emails:
+                        st.session_state.processed_emails = processed_emails
+                st.session_state.initialized = True
+                st.rerun()
+        except Exception as e:
+            st.error(f"Error initializing: {str(e)}")
 
     # Check for authorization code in URL
     auth_code = get_auth_code_from_url()
@@ -493,12 +516,18 @@ def main():
                         
                         # Check if this is a different user than before
                         if st.session_state.get('user_email') != new_user_email:
-                            # Clear previous user's data or set flag to do it
-                            st.session_state.should_clear_previous = True
+                            # Clear previous user's data
+                            clear_user_records(new_user_email)
                         
                         # Store the user's email
                         st.session_state.user_email = new_user_email
-                
+                        
+                        # Process emails immediately after authentication
+                        with st.spinner("Processing your emails..."):
+                            processed_emails = get_email_messages(service, new_user_email)
+                            if processed_emails:
+                                st.session_state.processed_emails = processed_emails
+            
                 st.rerun()
             except Exception as e:
                 st.error(f"Authentication failed: {str(e)}")
@@ -537,13 +566,6 @@ def main():
                     st.error(f"Error initiating authentication: {str(e)}")
                     st.session_state.auth_in_progress = False
     else:
-        # Check if we need to clear previous user's data
-        if st.session_state.get('should_clear_previous', False):
-            # Clear previous records and reset flag
-            clear_user_records(st.session_state.user_email)
-            st.session_state.should_clear_previous = False
-            st.rerun()
-        
         # Get current page from session state
         current_page = st.session_state.get('current_page', 'dashboard')
         
