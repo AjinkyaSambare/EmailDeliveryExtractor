@@ -248,7 +248,7 @@ class EmailProcessor:
         except:
             return date_str
 
-    def process_emails(self, service, max_results: int = 500) -> List[Dict]:
+    def process_emails(self, service, max_results: int = 100) -> List[Dict]:
         """Main function to process emails in batches."""
         try:
             # Initialize
@@ -394,7 +394,7 @@ class AzureOpenAIChat:
         Output JSON:
         """
 
-def get_email_messages(service, user_email=None, max_results: int = 500) -> List[Dict]:
+def get_email_messages(service, user_email=None, max_results: int = 100) -> List[Dict]:
     """Entry point for email processing."""
     processor = EmailProcessor(user_email)
     return processor.process_emails(service, max_results)
