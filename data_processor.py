@@ -81,11 +81,12 @@ def display_delivery_details(data: Dict[str, Any]):
         st.error(f"Error displaying delivery details: {str(e)}")
 
 class EmailProcessor:
-    def __init__(self):
+    def __init__(self, user_email=None):
         self.chat_client = AzureOpenAIChat()
         self.processed_ids = set()
         self.status_text = st.empty()
         self.progress_bar = st.progress(0)
+        self.user_email = user_email
 
     def _get_processed_ids(self) -> Set[str]:
         """Fetch IDs of previously processed emails."""
@@ -95,11 +96,21 @@ class EmailProcessor:
                 return set()
             
             cursor = conn.cursor()
-            cursor.execute("""
-                SELECT email_id 
-                FROM delivery_details 
-                WHERE email_id IS NOT NULL
-            """)
+            
+            # Filter by user_email if available
+            if self.user_email:
+                cursor.execute("""
+                    SELECT email_id 
+                    FROM delivery_details 
+                    WHERE email_id IS NOT NULL
+                    AND (user_email = %s OR user_email IS NULL)
+                """, (self.user_email,))
+            else:
+                cursor.execute("""
+                    SELECT email_id 
+                    FROM delivery_details 
+                    WHERE email_id IS NOT NULL
+                """)
             
             processed_ids = {row[0] for row in cursor.fetchall()}
             conn.close()
@@ -219,7 +230,8 @@ class EmailProcessor:
                     })
                     
                     processed_data.append(parsed_json)
-                    insert_into_db(parsed_json, email['id'])
+                    # Pass user_email to insert_into_db
+                    insert_into_db(parsed_json, email['id'], self.user_email)
                     
             except Exception as e:
                 st.warning(f"Error processing email {email['subject']}: {str(e)}")
@@ -382,7 +394,7 @@ class AzureOpenAIChat:
         Output JSON:
         """
 
-def get_email_messages(service, max_results: int = 500) -> List[Dict]:
+def get_email_messages(service, user_email=None, max_results: int = 500) -> List[Dict]:
     """Entry point for email processing."""
-    processor = EmailProcessor()
+    processor = EmailProcessor(user_email)
     return processor.process_emails(service, max_results)
