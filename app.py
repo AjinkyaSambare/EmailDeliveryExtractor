@@ -22,18 +22,43 @@ from database import (
 def load_css():
     st.markdown("""
     <style>
-        /* Dark theme base */
+        /* Force dark theme base */
         .main, [data-testid="stSidebar"] {
-            background-color: #121212;
-            color: #f0f0f0;
+            background-color: #121212 !important;
+            color: #f0f0f0 !important;
+        }
+        
+        /* Override Streamlit theme selector */
+        .stApp {
+            background-color: #121212 !important;
+        }
+        
+        /* Force styles on light theme elements */
+        .css-1d391kg, .st-be, .st-bf, .st-bg, .st-bh, .st-bi, .st-bj, 
+        .css-1belztu, .css-1rs6os, .css-1u1zr8h {
+            background-color: #121212 !important;
+            color: #f0f0f0 !important;
+        }
+        
+        /* Force dark inputs and selects */
+        div.stTextInput input, div.stSelectbox div, div.stNumberInput div,
+        [data-baseweb="select"] {
+            background-color: #1e1e1e !important;
+            color: #f0f0f0 !important;
+            border-color: #444444 !important;
+        }
+        
+        /* Force dark text colors on all text elements */
+        p, div, span, label, .stMarkdown, .stText, .stCode {
+            color: #f0f0f0 !important;
         }
         
         [data-testid="stSidebarNavLink"] {
             color: #f0f0f0 !important;
         }
         
-        h1, h2, h3, h4, h5, h6, p, div {
-            color: #f0f0f0;
+        h1, h2, h3, h4, h5, h6 {
+            color: #f0f0f0 !important;
         }
         
         /* Card styling */
@@ -212,15 +237,15 @@ def load_css():
         
         /* Primary button */
         div.stButton > button:first-child {
-            background-color: #FF5252;
-            color: white;
+            background-color: #FF5252 !important;
+            color: white !important;
         }
         
         /* Secondary button */
         div.stButton > button:not(:first-child) {
-            background-color: #2a2a2a;
-            color: #f0f0f0;
-            border: 1px solid #444444;
+            background-color: #2a2a2a !important;
+            color: #f0f0f0 !important;
+            border: 1px solid #444444 !important;
         }
         
         /* Make Streamlit elements more compact */
@@ -259,16 +284,35 @@ def load_css():
         
         /* Style the sidebar */
         [data-testid="stSidebar"] {
-            background-color: #121212;
+            background-color: #121212 !important;
             border-right: 1px solid #444444;
         }
         
-        /* Chart axis colors */
-        .vega-embed .vega-axis-label {
-            fill: #aaaaaa !important;
+        /* DataFrames and other components */
+        .stDataFrame [data-testid="stTable"] {
+            background-color: #1e1e1e !important;
         }
         
-        .vega-embed .vega-axis-title {
+        .stDataFrame [data-testid="stTable"] th {
+            background-color: #2c2c2c !important;
+            color: #f0f0f0 !important;
+        }
+        
+        .stDataFrame [data-testid="stTable"] td {
+            color: #f0f0f0 !important;
+        }
+        
+        /* Force dark theme for plots */
+        .stPlotlyChart > div {
+            background-color: #1e1e1e !important;
+        }
+        
+        /* Chart axis colors */
+        .vega-embed .vega-axis-label,
+        .vega-embed .vega-axis-title,
+        .vega-embed .vega-title,
+        .vega-embed .vega-legend-title,
+        .vega-embed .vega-legend-label {
             fill: #aaaaaa !important;
         }
         
@@ -299,43 +343,47 @@ def load_css():
             margin-bottom: 0.5rem;
         }
         
-        /* Process button styling */
-        .red-button {
-            background-color: #FF5252 !important;
-            color: white !important;
-            border: none !important;
-        }
-        
-        /* Logout button styling */
-        .outline-button {
+        /* Force dark expanders */
+        .streamlit-expanderHeader {
             background-color: #1e1e1e !important;
             color: #f0f0f0 !important;
-            border: 1px solid #444444 !important;
         }
         
-        /* Dark button styling */
-        .dark-button {
-            background-color: #2a2a2a !important;
+        .streamlit-expanderContent {
+            background-color: #121212 !important;
             color: #f0f0f0 !important;
-            border: 1px solid #444444 !important;
         }
         
-        /* Section divider */
-        hr {
-            border-color: #444444;
-            margin: 1.5rem 0;
+        /* Force dark tabs */
+        button[role="tab"] {
+            background-color: #1e1e1e !important;
+            color: #f0f0f0 !important;
         }
         
-        /* Custom chart size */
-        .chart-row {
-            height: 300px !important;
+        button[role="tab"][aria-selected="true"] {
+            border-bottom-color: #FF5252 !important;
+            color: #FF5252 !important;
         }
         
-        /* Icon styling */
-        .package-icon {
-            font-size: 1.5rem;
-            margin-right: 0.5rem;
-            color: #FFA726;
+        /* Force dark checkbox */
+        [data-testid="stCheckbox"] {
+            color: #f0f0f0 !important;
+        }
+        
+        /* Force dark sliders */
+        [data-testid="stSlider"] .stSlider div {
+            background-color: #1e1e1e !important;
+        }
+        
+        /* Force dark select box options */
+        [data-baseweb="popover"] {
+            background-color: #1e1e1e !important;
+            color: #f0f0f0 !important;
+        }
+        
+        [data-baseweb="popover"] li {
+            background-color: #1e1e1e !important;
+            color: #f0f0f0 !important;
         }
     </style>
     """, unsafe_allow_html=True)
@@ -471,7 +519,30 @@ def display_enhanced_history_table(df):
         st.error(f"Error displaying history table: {str(e)}")
 
 def main():
-    st.set_page_config(page_title="Delivery Email Analyzer", page_icon="📦", layout="wide")
+    # Set dark theme explicitly
+    st.set_page_config(
+        page_title="Delivery Email Analyzer", 
+        page_icon="📦", 
+        layout="wide",
+        initial_sidebar_state="expanded",
+        menu_items={
+            'Get Help': None,
+            'Report a bug': None,
+            'About': None
+        }
+    )
+    
+    # Force dark mode immediately
+    st.markdown("""
+    <script>
+        // Force dark mode through localStorage
+        localStorage.setItem('theme', 'dark');
+        
+        // This script forces dark mode by directly manipulating the DOM
+        document.querySelector('body').classList.add('dark');
+        document.documentElement.style.colorScheme = 'dark';
+    </script>
+    """, unsafe_allow_html=True)
     load_css()
     
     # Create database table if it doesn't exist
