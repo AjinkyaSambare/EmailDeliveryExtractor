@@ -22,65 +22,41 @@ from database import (
 def load_css():
     st.markdown("""
     <style>
-        /* Force dark theme base */
+        /* Light theme base */
         .main, [data-testid="stSidebar"] {
-            background-color: #121212 !important;
-            color: #f0f0f0 !important;
-        }
-        
-        /* Override Streamlit theme selector */
-        .stApp {
-            background-color: #121212 !important;
-        }
-        
-        /* Force styles on light theme elements */
-        .css-1d391kg, .st-be, .st-bf, .st-bg, .st-bh, .st-bi, .st-bj, 
-        .css-1belztu, .css-1rs6os, .css-1u1zr8h {
-            background-color: #121212 !important;
-            color: #f0f0f0 !important;
-        }
-        
-        /* Force dark inputs and selects */
-        div.stTextInput input, div.stSelectbox div, div.stNumberInput div,
-        [data-baseweb="select"] {
-            background-color: #1e1e1e !important;
-            color: #f0f0f0 !important;
-            border-color: #444444 !important;
-        }
-        
-        /* Force dark text colors on all text elements */
-        p, div, span, label, .stMarkdown, .stText, .stCode {
-            color: #f0f0f0 !important;
+            background-color: #FFFFFF;
+            color: #262730;
         }
         
         [data-testid="stSidebarNavLink"] {
-            color: #f0f0f0 !important;
+            color: #262730 !important;
         }
         
-        h1, h2, h3, h4, h5, h6 {
-            color: #f0f0f0 !important;
+        h1, h2, h3, h4, h5, h6, p, div {
+            color: #262730;
         }
         
         /* Card styling */
         .metric-card {
-            background-color: #1e1e1e;
+            background-color: #FFFFFF;
             border-radius: 0.5rem;
             padding: 1rem;
-            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
             margin-bottom: 1rem;
+            border: 1px solid #E6E6E6;
         }
         
         /* Metric value styling */
         .metric-value {
             font-size: 2.5rem;
             font-weight: bold;
-            color: #40c4ff;
+            color: #FF5252;
         }
         
         /* Metric label styling */
         .metric-label {
             font-size: 0.9rem;
-            color: #aaaaaa;
+            color: #6E6E6E;
             margin-bottom: 0.5rem;
         }
         
@@ -99,24 +75,24 @@ def load_css():
         .styled-table {
             width: 100%;
             border-collapse: collapse;
-            color: #f0f0f0;
+            color: #262730;
         }
         
         .styled-table th {
-            background-color: #2c2c2c;
+            background-color: #F5F5F5;
             font-weight: 500;
             text-align: left;
             padding: 0.75rem;
-            border-bottom: 1px solid #444444;
+            border-bottom: 1px solid #E0E0E0;
         }
         
         .styled-table td {
             padding: 0.75rem;
-            border-bottom: 1px solid #444444;
+            border-bottom: 1px solid #E0E0E0;
         }
         
         .styled-table tr:hover {
-            background-color: #2a2a2a;
+            background-color: #F9F9F9;
         }
         
         /* Status indicators */
@@ -158,15 +134,16 @@ def load_css():
             display: flex;
             align-items: center;
             font-size: 0.95rem;
+            color: #262730;
         }
         
         .sidebar-nav-item:hover {
-            background-color: #2a2a2a;
+            background-color: #F0F2F6;
         }
         
         .sidebar-nav-item.active {
-            background-color: #2a2a2a;
-            color: #40c4ff;
+            background-color: #F0F2F6;
+            color: #FF5252;
             font-weight: 500;
         }
         
@@ -181,7 +158,7 @@ def load_css():
             display: flex;
             align-items: center;
             padding: 1rem;
-            border-bottom: 1px solid #444444;
+            border-bottom: 1px solid #E0E0E0;
             margin-bottom: 1rem;
         }
         
@@ -189,19 +166,19 @@ def load_css():
             width: 2.5rem;
             height: 2.5rem;
             border-radius: 50%;
-            background-color: #40c4ff;
+            background-color: #FF5252;
             display: flex;
             align-items: center;
             justify-content: center;
             margin-right: 0.75rem;
             font-weight: bold;
-            color: #121212;
+            color: #FFFFFF;
         }
         
         /* App header */
         .app-header {
             padding: 1rem 0;
-            border-bottom: 1px solid #444444;
+            border-bottom: 1px solid #E0E0E0;
             margin-bottom: 1.5rem;
             display: flex;
             align-items: center;
@@ -211,19 +188,20 @@ def load_css():
             font-size: 1.5rem;
             font-weight: 500;
             margin-left: 0.5rem;
-            color: #f0f0f0;
+            color: #262730;
         }
 
         /* Chart containers */
         .chart-container {
-            background-color: #1e1e1e;
+            background-color: #FFFFFF;
             border-radius: 0.5rem;
             padding: 1rem;
             margin-bottom: 1rem;
+            border: 1px solid #E6E6E6;
         }
         
         .chart-title {
-            color: #aaaaaa;
+            color: #6E6E6E;
             font-size: 0.9rem;
             margin-bottom: 0.5rem;
         }
@@ -243,9 +221,9 @@ def load_css():
         
         /* Secondary button */
         div.stButton > button:not(:first-child) {
-            background-color: #2a2a2a !important;
-            color: #f0f0f0 !important;
-            border: 1px solid #444444 !important;
+            background-color: #F0F2F6 !important;
+            color: #262730 !important;
+            border: 1px solid #E0E0E0 !important;
         }
         
         /* Make Streamlit elements more compact */
@@ -278,112 +256,72 @@ def load_css():
             padding-bottom: 1rem !important;
         }
         
-        /* Remove StreamLit branding */
-        #MainMenu {visibility: hidden;}
-        footer {visibility: hidden;}
-        
         /* Style the sidebar */
         [data-testid="stSidebar"] {
-            background-color: #121212 !important;
-            border-right: 1px solid #444444;
-        }
-        
-        /* DataFrames and other components */
-        .stDataFrame [data-testid="stTable"] {
-            background-color: #1e1e1e !important;
-        }
-        
-        .stDataFrame [data-testid="stTable"] th {
-            background-color: #2c2c2c !important;
-            color: #f0f0f0 !important;
-        }
-        
-        .stDataFrame [data-testid="stTable"] td {
-            color: #f0f0f0 !important;
-        }
-        
-        /* Force dark theme for plots */
-        .stPlotlyChart > div {
-            background-color: #1e1e1e !important;
-        }
-        
-        /* Chart axis colors */
-        .vega-embed .vega-axis-label,
-        .vega-embed .vega-axis-title,
-        .vega-embed .vega-title,
-        .vega-embed .vega-legend-title,
-        .vega-embed .vega-legend-label {
-            fill: #aaaaaa !important;
-        }
-        
-        /* Header adjustments */
-        h1, h2, h3 {
-            color: #f0f0f0 !important;
-            font-weight: 500 !important;
+            background-color: #FFFFFF !important;
+            border-right: 1px solid #E0E0E0;
         }
         
         /* Analytics cards */
         .analytics-card {
-            background-color: #1e1e1e;
+            background-color: #FFFFFF;
             border-radius: 0.5rem;
             padding: 1.5rem;
             margin-bottom: 1rem;
+            border: 1px solid #E6E6E6;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
         }
         
         .analytics-value {
             font-size: 2.5rem;
             font-weight: 500;
-            color: #40c4ff;
+            color: #FF5252;
             margin-bottom: 0.25rem;
         }
         
         .analytics-title {
             font-size: 1rem;
-            color: #aaaaaa;
+            color: #6E6E6E;
             margin-bottom: 0.5rem;
         }
         
-        /* Force dark expanders */
-        .streamlit-expanderHeader {
-            background-color: #1e1e1e !important;
-            color: #f0f0f0 !important;
+        /* Process button styling */
+        .red-button {
+            background-color: #FF5252 !important;
+            color: white !important;
+            border: none !important;
         }
         
-        .streamlit-expanderContent {
-            background-color: #121212 !important;
-            color: #f0f0f0 !important;
+        /* Logout button styling */
+        .outline-button {
+            background-color: #FFFFFF !important;
+            color: #262730 !important;
+            border: 1px solid #E0E0E0 !important;
         }
         
-        /* Force dark tabs */
-        button[role="tab"] {
-            background-color: #1e1e1e !important;
-            color: #f0f0f0 !important;
+        /* Light button styling */
+        .light-button {
+            background-color: #F0F2F6 !important;
+            color: #262730 !important;
+            border: 1px solid #E0E0E0 !important;
         }
         
-        button[role="tab"][aria-selected="true"] {
-            border-bottom-color: #FF5252 !important;
-            color: #FF5252 !important;
+        /* Section divider */
+        hr {
+            border-color: #E0E0E0;
+            margin: 1.5rem 0;
         }
         
-        /* Force dark checkbox */
-        [data-testid="stCheckbox"] {
-            color: #f0f0f0 !important;
+        /* Custom chart size */
+        .chart-row {
+            height: 300px !important;
         }
         
-        /* Force dark sliders */
-        [data-testid="stSlider"] .stSlider div {
-            background-color: #1e1e1e !important;
-        }
-        
-        /* Force dark select box options */
-        [data-baseweb="popover"] {
-            background-color: #1e1e1e !important;
-            color: #f0f0f0 !important;
-        }
-        
-        [data-baseweb="popover"] li {
-            background-color: #1e1e1e !important;
-            color: #f0f0f0 !important;
+        /* Icon styling */
+        .package-icon {
+            font-size: 1.5rem;
+            margin-right: 0.5rem;
+            color: #FFA726;
         }
     </style>
     """, unsafe_allow_html=True)
@@ -397,26 +335,26 @@ def get_auth_code_from_url():
 
 def create_emails_over_time_chart(data):
     """Create a line chart for emails processed over time"""
-    chart = alt.Chart(data).mark_line(point=True, color='#40c4ff').encode(
-        x=alt.X('date:T', title='Date', axis=alt.Axis(labelColor='#aaaaaa', titleColor='#aaaaaa')),
-        y=alt.Y('count:Q', title='Emails Processed', axis=alt.Axis(labelColor='#aaaaaa', titleColor='#aaaaaa')),
+    chart = alt.Chart(data).mark_line(point=True, color='#FF5252').encode(
+        x=alt.X('date:T', title='Date', axis=alt.Axis(labelColor='#262730', titleColor='#262730')),
+        y=alt.Y('count:Q', title='Emails Processed', axis=alt.Axis(labelColor='#262730', titleColor='#262730')),
         tooltip=['date:T', 'count:Q']
     ).properties(
         height=250,
-        background='#1e1e1e'
+        background='#FFFFFF'
     ).configure_view(
         strokeWidth=0
     ).configure_axis(
         grid=True,
-        gridColor='#333333',
-        domainColor='#444444'
+        gridColor='#ECECEC',
+        domainColor='#DEDEDE'
     )
     
     return chart
 
 def create_carrier_chart(data):
     """Create a bar chart for carrier distribution with horizontal labels and taller bars"""
-    colors = ['#9C27B0', '#40c4ff', '#FF5252', '#FFC107']
+    colors = ['#9C27B0', '#FF5252', '#2196F3', '#FFC107', '#4CAF50']
     
     chart = alt.Chart(data).mark_bar(
         cornerRadiusTopLeft=3,
@@ -427,14 +365,14 @@ def create_carrier_chart(data):
                 title='Carrier', 
                 sort='-y',
                 axis=alt.Axis(
-                    labelColor='#aaaaaa', 
-                    titleColor='#aaaaaa',
+                    labelColor='#262730', 
+                    titleColor='#262730',
                     labelAngle=0,  # Make labels horizontal
                     labelPadding=10
                 )),
         y=alt.Y('count:Q', 
                 title='Number of Packages',
-                axis=alt.Axis(labelColor='#aaaaaa', titleColor='#aaaaaa')),
+                axis=alt.Axis(labelColor='#262730', titleColor='#262730')),
         color=alt.Color('carrier:N', 
                        scale=alt.Scale(range=colors),
                        legend=None),
@@ -442,13 +380,13 @@ def create_carrier_chart(data):
     ).properties(
         height=300,  # Increase chart height
         width=500,   # Control the width
-        background='#1e1e1e'
+        background='#FFFFFF'
     ).configure_view(
         strokeWidth=0
     ).configure_axis(
         grid=True,
-        gridColor='#333333',
-        domainColor='#444444'
+        gridColor='#ECECEC',
+        domainColor='#DEDEDE'
     )
     
     return chart
@@ -456,7 +394,7 @@ def create_carrier_chart(data):
 def create_status_chart(data):
     """Create a pie chart for delivery status"""
     # Custom color scheme for status
-    status_colors = {'Confirmed': '#4CAF50', 'Failed': '#FF5252', 'Pending': '#aaaaaa'}
+    status_colors = {'Confirmed': '#4CAF50', 'Failed': '#FF5252', 'Pending': '#FFC107'}
     
     chart = alt.Chart(data).mark_arc().encode(
         theta=alt.Theta('count:Q'),
@@ -466,7 +404,7 @@ def create_status_chart(data):
         tooltip=['status:N', 'count:Q']
     ).properties(
         height=250,
-        background='#1e1e1e'
+        background='#FFFFFF'
     )
     
     return chart
@@ -519,7 +457,6 @@ def display_enhanced_history_table(df):
         st.error(f"Error displaying history table: {str(e)}")
 
 def main():
-    # Set dark theme explicitly
     st.set_page_config(
         page_title="Delivery Email Analyzer", 
         page_icon="📦", 
@@ -532,17 +469,7 @@ def main():
         }
     )
     
-    # Force dark mode immediately
-    st.markdown("""
-    <script>
-        // Force dark mode through localStorage
-        localStorage.setItem('theme', 'dark');
-        
-        // This script forces dark mode by directly manipulating the DOM
-        document.querySelector('body').classList.add('dark');
-        document.documentElement.style.colorScheme = 'dark';
-    </script>
-    """, unsafe_allow_html=True)
+    # Load the CSS for light mode
     load_css()
     
     # Create database table if it doesn't exist
@@ -653,8 +580,8 @@ def main():
                 <div style="display: flex; align-items: center; margin-bottom: 1rem;">
                     <div style="width: 2.5rem; height: 2.5rem; border-radius: 50%; background-color: #40c4ff; display: flex; align-items: center; justify-content: center; margin-right: 0.75rem; font-weight: bold; color: #ffffff; font-size: 1.2rem;">{user_initial}</div>
                     <div>
-                        <div style="font-weight: 500; color: #f0f0f0;">{user_email.split('@')[0]}</div>
-                        <div style="font-size: 0.8rem; color: #aaaaaa;">{user_email}</div>
+                        <div style="font-weight: 500; color: #40c4ff;">{user_email.split('@')[0]}</div>
+                        <div style="font-size: 0.8rem; color: #40c4ff;">{user_email}</div>
                     </div>
                 </div>
             </div>
